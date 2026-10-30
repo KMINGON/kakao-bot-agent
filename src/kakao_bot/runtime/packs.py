@@ -5,8 +5,10 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import yaml
@@ -19,6 +21,7 @@ class LoadedPack:
     manifest: dict[str, Any]
     digest: str
     data: dict[str, Any]
+    _files: dict[str, str]
 
     @property
     def snapshot(self) -> dict[str, str]:
@@ -41,18 +44,53 @@ class LoadedPack:
         return tools
 
     def _module(self):
-        path = self.root / self.manifest.get("tools_module", "tools.py")
-        spec = importlib.util.spec_from_file_location(f"domain_pack_{self.digest}", path)
+        return self._load_module(self.manifest.get("tools_module", "tools.py"), "tools")
+
+    def adapter_module(self) -> ModuleType | None:
+        """Load optional operator-reviewed adapters from the admitted pack snapshot."""
+        if "adapters_module" not in self.manifest:
+            return None
+        return self._load_module(self.manifest["adapters_module"], "adapters")
+
+    def _load_module(self, relative: str, kind: str) -> ModuleType:
+        path = _module_path(self.root, relative, self._files)
+        source = path.read_bytes()
+        if hashlib.sha256(source).hexdigest() != self._files[relative]:
+            raise ValueError(f"Pack content hash mismatch: {relative}")
+        spec = importlib.util.spec_from_file_location(f"domain_pack_{self.digest}_{kind}", path)
         if spec is None or spec.loader is None:
-            raise ValueError("Invalid pack tool module")
+            raise ValueError("Invalid pack Python module")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        previous = sys.modules.get(spec.name)
+        sys.modules[spec.name] = module
+        try:
+            # Execute the checked bytes; timestamp-based .pyc caches can contain older code.
+            exec(compile(source, str(path), "exec"), module.__dict__)
+        except BaseException:
+            if previous is None:
+                sys.modules.pop(spec.name, None)
+            else:
+                sys.modules[spec.name] = previous
+            raise
         return module
 
     def validate_answer(self, answer: dict, tool_results: list[dict]) -> dict:
         """Optional reviewed domain hook checks typed facts and can render them deterministically."""
         hook = getattr(self._module(), "validate_answer", None)
         return hook(answer, tool_results) if hook else answer
+
+
+def _module_path(root: Path, relative: Any, files: dict[str, str]) -> Path:
+    if (not isinstance(relative, str) or not relative or "\\" in relative
+            or Path(relative).is_absolute() or ".." in Path(relative).parts
+            or Path(relative).as_posix() != relative or Path(relative).suffix != ".py"):
+        raise ValueError("Pack module must be a relative .py path inside the pack")
+    path = root / relative
+    if relative not in files or not path.is_file():
+        raise ValueError("Pack module must be locked and present")
+    if path.is_symlink() or not path.resolve().is_relative_to(root):
+        raise ValueError("Pack module must stay inside the pack without symlinks")
+    return path
 
 
 def load_pack(root: Path | str, ref: str | dict[str, Any]) -> LoadedPack:
@@ -85,9 +123,9 @@ def load_pack(root: Path | str, ref: str | dict[str, Any]) -> LoadedPack:
                     and p.name != "pack.lock.json" and "__pycache__" not in p.parts}
     if actual_files != set(files):
         raise ValueError("Untracked or missing pack files; regenerate the lock after review")
-    tools_module = manifest.get("tools_module", "tools.py")
-    if tools_module not in files:
-        raise ValueError("Tool module must be locked")
+    _module_path(path, manifest.get("tools_module", "tools.py"), files)
+    if "adapters_module" in manifest:
+        _module_path(path, manifest["adapters_module"], files)
     digest = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if isinstance(ref, dict) and any(ref.get(k) != v for k, v in {
         "digest": digest, "version": manifest["version"],
@@ -98,7 +136,7 @@ def load_pack(root: Path | str, ref: str | dict[str, Any]) -> LoadedPack:
     ids = [s["id"] for s in data.get("sources", [])]
     if len(ids) != len(set(ids)):
         raise ValueError("Duplicate evidence IDs")
-    return LoadedPack(path, manifest, digest, data)
+    return LoadedPack(path, manifest, digest, data, files)
 
 
 def lock_pack(path: Path) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
 import time
@@ -13,6 +14,7 @@ from deepagents.backends import CompositeBackend, FilesystemBackend, StateBacken
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware
 from deepagents.profiles import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
+from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ProviderStrategy
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -34,6 +36,38 @@ SYSTEM_PROMPT = """당신은 카카오톡에서 짧고 정확하게 업무를 �
 claims와 evidence_ids에는 실제 출처 ID를 넣는다. 일반 인사나 사용자가 알려준 별칭은 업무 근거가 필요 없다.
 순수 계산 결과와 사용자가 알려준 별칭은 answer에 적고 claims는 빈 목록으로 둔다.
 """
+
+
+# DeepAgents replaces middleware by name, so extensions cannot reuse core slots.
+RESERVED_MIDDLEWARE_NAMES = frozenset({
+    "FilesystemMiddleware", "SubAgentMiddleware", "AsyncSubAgentMiddleware",
+    "SummarizationMiddleware", "_DeepAgentsSummarizationMiddleware",
+    "PatchToolCallsMiddleware", "SkillsMiddleware",
+    "MemoryMiddleware", "HumanInTheLoopMiddleware", "UnsupportedContentMiddleware",
+    "AnthropicPromptCachingMiddleware", "BedrockPromptCachingMiddleware",
+    "FireworksPromptCachingMiddleware", "_ParentNotifierMiddleware",
+    "_ToolExclusionMiddleware", "ToolPolicyMiddleware", "TodoListMiddleware",
+})
+
+
+def pack_middleware(pack: LoadedPack) -> list[AgentMiddleware]:
+    module = pack.adapter_module()
+    if module is None or not hasattr(module, "build_middleware"):
+        return []
+    factory = module.build_middleware
+    if not callable(factory) or inspect.iscoroutinefunction(factory):
+        raise ValueError("build_middleware must be a synchronous factory")
+    middleware = factory(pack)
+    if not isinstance(middleware, list) or not all(isinstance(m, AgentMiddleware) for m in middleware):
+        raise ValueError("build_middleware must return a list of AgentMiddleware objects")
+    names = set(RESERVED_MIDDLEWARE_NAMES)
+    for item in middleware:
+        if not isinstance(item.name, str) or not item.name.strip() or item.name in names:
+            raise ValueError("Reserved, duplicate or invalid middleware name")
+        if getattr(item, "tools", None):
+            raise ValueError("Middleware tools are forbidden; register tools through build_tools and allowed_tools")
+        names.add(item.name)
+    return middleware
 
 
 def validate_answer(value: Any, pack: LoadedPack, seen_evidence: set[str] | None = None) -> AnswerEnvelope:
@@ -144,6 +178,7 @@ class AgentRuntime:
     async def graph_for(self, ref: str | dict) -> tuple[Any, LoadedPack]:
         pack = load_pack(self.config.packs_root, ref)
         if pack.digest not in self.graphs:
+            custom_middleware = pack_middleware(pack)
             backend = CompositeBackend(default=StateBackend(), routes={
                 "/skills/": FilesystemBackend(pack.root / "skills", virtual_mode=True),
                 "/instructions/": FilesystemBackend(pack.root / "instructions", virtual_mode=True),
@@ -158,11 +193,11 @@ class AgentRuntime:
                 trigger=("tokens", self.config.summary_trigger_tokens),
                 keep=("messages", self.config.summary_keep_messages),
                 trim_tokens_to_summarize=10000)
-            self.graphs[pack.digest] = create_deep_agent(
+            graph = create_deep_agent(
                 model=self.model, system_prompt=SYSTEM_PROMPT, tools=tools,
                 backend=backend, checkpointer=self.checkpointer,
                 skills=["/skills/"], memory=["/instructions/AGENTS.md"], subagents=[],
-                middleware=[filesystem, summary, ToolPolicyMiddleware()],
+                middleware=[filesystem, summary, ToolPolicyMiddleware(), *custom_middleware],
                 permissions=[
                     FilesystemPermission(operations=["read"], paths=["/**"], mode="allow"),
                     FilesystemPermission(operations=["write"], paths=["/scratch/**"], mode="allow"),
@@ -171,12 +206,15 @@ class AgentRuntime:
                 response_format=ProviderStrategy(AnswerEnvelope, strict=True),
                 context_schema=RunContext,
             )
-            self.packs[pack.digest] = pack
             # Inspect the compiled node, including tools added by the harness.
-            tool_node = self.graphs[pack.digest].nodes["tools"].bound
+            tool_node = graph.nodes["tools"].bound
             names = set(tool_node.tools_by_name)
             if names & {"execute", "delete", "task", "write_todos"}:
                 raise ValueError("Unsafe default tool exposed")
+            if names != {tool.name for tool in [*tools, *filesystem.tools]}:
+                raise ValueError("Unexpected middleware tool exposed")
+            self.graphs[pack.digest] = graph
+            self.packs[pack.digest] = pack
             self.tool_names[pack.digest] = sorted(names)
         return self.graphs[pack.digest], pack
 

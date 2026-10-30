@@ -4,10 +4,9 @@ from __future__ import annotations
 import os
 import sys
 from contextlib import AsyncExitStack
-from pathlib import Path
 from urllib.parse import urlparse
 
-from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from langchain.mcp import MCPAdapter
 
 
@@ -34,8 +33,17 @@ async def load_mcp_tools(pack, stack: AsyncExitStack):
                 raise ValueError("Remote MCP requires HTTPS")
             headers = {header: os.environ[name] for header, name in spec.get("headers_env", {}).items()}
             target = StreamableHttpTransport(url, headers=headers)
+        elif spec["transport"] == "custom":
+            factory = getattr(pack.adapter_module(), "build_mcp_transport", None)
+            if not callable(factory):
+                raise ValueError("Custom MCP transport requires build_mcp_transport(spec, pack)")
+            target = factory(spec, pack)
+            if not isinstance(target, ClientTransport):
+                raise TypeError("build_mcp_transport must return a ClientTransport")
         else:
             raise ValueError("Unsupported MCP transport")
+        # Client context exit alone does not close keep-alive stdio transports.
+        stack.push_async_callback(target.close)
         adapter = await stack.enter_async_context(MCPAdapter(target))
         discovered = await adapter.list_tools()
         names = {tool.name for tool in discovered}

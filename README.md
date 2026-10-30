@@ -34,7 +34,7 @@ PostgreSQL 하나에 수신 이벤트, 작업 큐, 응답 상태, 대화 체크�
 | 컨텍스트 | 사용자·대화·팩 버전별 분리, PostgreSQL 저장, 긴 대화 요약과 원문 보관 |
 | 도구 | 팩별 Python 도구와 MCP 허용 목록, 도구 시간·호출 횟수 제한 |
 | 스킬·파일 | `SKILL.md` 선택 로딩, 자료 읽기, 대화별 `/scratch/` 작업 공간 |
-| 응답 검증 | 구조화된 답변, 실제 조회한 출처 확인, 팩의 선택적 `validate_answer` 훅 |
+| 훅·응답 검증 | SDK 미들웨어 연결, 구조화된 답변, 실제 조회한 출처 확인, 팩의 `validate_answer` 훅 |
 | 운영 | HTTPS, 컨테이너 자동 재시작, 건강 상태 검사, 모델 사용량·추정 비용 기록 |
 
 현재 모델은 `gpt-5.4-mini-2026-03-17`로 고정했다. 실행당 모델 최대 8회, 도구 최대 12회, 전체 180초를 기본 한도로 둔다. 요약에도 같은 호출 예산을 적용한다.
@@ -108,6 +108,8 @@ domain_packs/equipment_demo/
 
 팩을 수정한 뒤 검토한 파일의 해시를 갱신한다. 팩 버전과 데이터 버전도 함께 올린다.
 
+문제별 연결 위치와 예외 처리 기준은 [어댑터 가이드](docs/ADAPTERS.md)에 정리했다. 도구·스킬은 기존 방식으로 추가하고, 컨텍스트 선택이나 도구 결과 변환은 선택적 `adapters_module`의 SDK 미들웨어로 처리한다. 특수 MCP 연결에는 같은 모듈의 transport 팩토리를 사용할 수 있다.
+
 ```bash
 uv sync --frozen
 uv run python - <<'PY'
@@ -129,7 +131,7 @@ PY
 python3 ops/smoke_http.py
 python3 ops/smoke_http.py --base-url https://kakao.mingon.dev
 
-# 48시간 운영 상태 관측: 모델 비용 없음
+# 필요할 때만 운영 상태 관측: 현재는 사용자 요청으로 중지
 docker compose --profile monitor up -d monitor
 python3 ops/report_monitor.py
 
@@ -140,9 +142,10 @@ docker compose logs --tail 100 api worker cloudflared
 
 콜백 요청을 보낸 뒤 응답이 유실되면 전달 여부를 `unknown`으로 남긴다. 중복 답장을 피하려고 자동 재전송하지 않는다. 이 구조가 외부 카카오 전송까지 정확히 한 번을 보장하는 것은 아니다.
 
-PC·인터넷·Docker Desktop이 살아 있어야 서비스가 유지된다. 현재 Windows의 AC 절전은 꺼 두었고 컨테이너는 자동 재시작한다. 로그인 전 무인 복구나 정전 대응은 별도 운영 범위다. 데이터 보존을 위해 운영 환경에서 `docker compose down --volumes`를 사용하지 않는다.
+PC·인터넷·Docker Desktop이 살아 있어야 서비스가 유지된다. 현재 Windows의 AC 절전은 꺼 두었고 컨테이너는 자동 재시작한다. 장시간 관측 컨테이너는 중지했으며 봇은 계속 실행한다. 로그인 전 무인 복구나 정전 대응은 별도 운영 범위다. 데이터 보존을 위해 운영 환경에서 `docker compose down --volumes`를 사용하지 않는다.
 
 - [운영 명령과 설정 복원](ops/README.md)
+- [어댑터 준비·검증 v2](.local/implementation/v2/README.md)
 - [구현·검증 결과 v1](.local/implementation/v1/README.md)
 - [이전 설계 v1–v6](.local/plan/README.md)
 
