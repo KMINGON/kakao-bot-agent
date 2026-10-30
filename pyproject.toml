@@ -1,0 +1,46 @@
+[project]
+name = "kakao-bot-agent"
+version = "0.1.0"
+description = "Durable Kakao webhook worker with a configurable Deep Agents runtime"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "deepagents==0.7.32",
+  "langchain[mcp]==1.4.7",
+  "langchain-core==1.7.3",
+  "langchain-openai==1.7.3",
+  "langgraph==1.2.18",
+  "langgraph-checkpoint==4.3.1",
+  "langgraph-checkpoint-postgres==3.2.0",
+  "fastmcp==4.1.4",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "procrastinate==3.10.0",
+  "psycopg[binary,pool]>=3.2,<4",
+  "httpx>=0.28,<1",
+  "pydantic>=2.10,<3",
+  "pyyaml>=6,<7",
+  "tiktoken>=0.8,<1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=1,<2",
+]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kakao_bot"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "integration: requires a disposable PostgreSQL database",
+  "live: uses paid model APIs or real Kakao delivery; excluded from ordinary runs",
+]
+addopts = "-m 'not live'"
+

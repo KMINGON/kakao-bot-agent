@@ -1,0 +1,10 @@
+{
+  "files": {
+    "data/records.json": "34872059a8b7b59a4315cacd5ea0f774745b9bea471eb2224ea18f2354a930ba",
+    "instructions/AGENTS.md": "92781bd2c9607d8959cc890be9b98d975ff4adefeaf1e0f04a1cc9358b96be22",
+    "pack.yaml": "9359e8e96a9549c718ee74e4e5c32f961cc27cef8f186d8ee00fc2f99cd55759",
+    "resource_graph.json": "bde2ebf498e4e2abc9d6e217a24653a83a2b317719a88757e6eeed7525712cd6",
+    "skills/notice-check/SKILL.md": "c30257db66abeb72f47132be4373df1c1625a10839cb960d8983b46b8d190942",
+    "tools.py": "87696a8656071b6e9a64d0cf91648b8144f9a6406e9ff2cde9ff6768bf81a0c6"
+  }
+}

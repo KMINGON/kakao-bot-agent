@@ -1,0 +1,19 @@
+name: kakao-bot-tests
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    environment:
+      POSTGRES_USER: kakao_test
+      POSTGRES_PASSWORD: disposable-test-only
+      POSTGRES_DB: kakao_test
+    ports:
+      - "127.0.0.1:15432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kakao_test -d kakao_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+

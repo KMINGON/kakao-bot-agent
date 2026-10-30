@@ -1,0 +1,16 @@
+{
+  "demo": true,
+  "date": "2026-11-01",
+  "dataset_version": "demo-2026-11-01-r2",
+  "equipment": [
+    {"name": "의자", "aliases": ["chair", "chairs"], "stock": 12, "reserved": 5, "unit": "개", "evidence_ids": ["I-001-C1", "B-021"]},
+    {"name": "트랙터", "aliases": ["tractor"], "stock": 2, "reserved": 1, "unit": "대", "evidence_ids": ["I-002", "B-022"]}
+  ],
+  "sources": [
+    {"id": "I-001", "title": "의자 최초 재고표", "value": 10, "unit": "개", "superseded_by": "I-001-C1"},
+    {"id": "I-001-C1", "title": "의자 재고 정정표", "value": 12, "unit": "개", "supersedes": "I-001"},
+    {"id": "B-021", "title": "2026-11-01 의자 기존 예약", "value": 5, "unit": "개"},
+    {"id": "I-002", "title": "트랙터 재고표", "value": 2, "unit": "대"},
+    {"id": "B-022", "title": "2026-11-01 트랙터 기존 예약", "value": 1, "unit": "대"}
+  ]
+}

@@ -1,0 +1,7 @@
+id: notice_demo
+version: '1.0.0'
+dataset_version: 'demo-notice-2026-r2'
+description: 원본 공지와 정정 공지를 비교하는 합성 검증용 팩
+tools_module: tools.py
+allowed_tools: [lookup_notice, get_source, calculate]
+mcp: []

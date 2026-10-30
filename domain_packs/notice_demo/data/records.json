@@ -1,0 +1,9 @@
+{
+  "demo": true,
+  "dataset_version": "demo-notice-2026-r2",
+  "notices": [{"name":"공동배송 신청", "deadline":"2026-11-05 18:00 Asia/Seoul", "original_deadline":"2026-11-03 18:00 Asia/Seoul", "eligibility":"두 마을 조합원", "required_documents":["신청서","품목 목록"], "evidence_ids":["N-001","N-001-C1"]}],
+  "sources": [
+    {"id":"N-001", "title":"공동배송 신청 원본 공지", "deadline":"2026-11-03 18:00 Asia/Seoul", "eligibility":"두 마을 조합원", "required_documents":["신청서","품목 목록"], "superseded_fields":["deadline"]},
+    {"id":"N-001-C1", "title":"공동배송 마감 정정 공지", "supersedes":"N-001", "changed_fields":{"deadline":"2026-11-05 18:00 Asia/Seoul"}, "note":"마감일 외 조건은 기존 공지와 동일"}
+  ]
+}

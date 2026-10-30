@@ -1,0 +1,151 @@
+name: kakao-bot-agent
+
+x-app: &app
+  image: kakao-bot-agent:local
+  build: .
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  volumes:
+    - ./domain_packs:/app/domain_packs:ro
+
+x-env: &env
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: kakao
+  DATABASE_USER: kakao
+  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+  KAKAO_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
+  KAKAO_WEBHOOK_HEADER_NAME: X-Bot-Secret
+  OPS_TOKEN_FILE: /run/secrets/ops_token
+  CHANNEL_SCOPE: "1630499"
+  CHANNEL_ONLY: "true"
+  PACKS_ROOT: /app/domain_packs
+  ACTIVE_PACK: ${ACTIVE_PACK:-equipment_demo}
+  MODEL_NAME: ${MODEL_NAME:-gpt-5.4-mini-2026-03-17}
+  BOT_MODE: ${BOT_MODE:-echo}
+  RUNTIME_REVISION: ${RUNTIME_REVISION:-v1}
+  WORKER_CONCURRENCY: "1"
+  LANGSMITH_TRACING: "false"
+  LANGCHAIN_TRACING_V2: "false"
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kakao
+      POSTGRES_USER: kakao
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kakao -d kakao"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    <<: *app
+    command: ["sh", "-c", "python -m kakao_bot.storage && exec uvicorn kakao_bot.app:app --host 0.0.0.0 --port 8000 --no-access-log"]
+    environment: *env
+    secrets:
+      - postgres_password
+      - webhook_secret
+      - ops_token
+    ports:
+      - "127.0.0.1:${LOCAL_API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "kakao_bot.worker"]
+    environment:
+      <<: *env
+      KAKAO_BOT_TOKEN_FILE: /run/secrets/kakao_bot_token
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets:
+      - postgres_password
+      - webhook_secret
+      - ops_token
+      - kakao_bot_token
+      - openai_api_key
+    depends_on:
+      api:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.6.1@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/cloudflare_tunnel_token"]
+    secrets:
+      - cloudflare_tunnel_token
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  monitor:
+    <<: *app
+    profiles: ["monitor"]
+    restart: "on-failure:5"
+    command: ["python", "ops/monitor.py"]
+    environment:
+      MONITOR_INTERNAL_URL: http://api:8000
+      MONITOR_PUBLIC_URL: https://kakao.mingon.dev
+      OPS_TOKEN_FILE: /run/secrets/ops_token
+      MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-60}
+      MONITOR_DURATION_HOURS: ${MONITOR_DURATION_HOURS:-48}
+      MONITOR_OUTPUT_DIR: /state
+    secrets:
+      - ops_token
+    volumes:
+      - ./.local/implementation/v1/evidence/monitor:/state
+    depends_on:
+      api:
+        condition: service_healthy
+
+secrets:
+  postgres_password:
+    file: .local/secret/postgres_password
+  webhook_secret:
+    file: .local/secret/webhook_secret
+  ops_token:
+    file: .local/secret/ops_token
+  kakao_bot_token:
+    file: .local/secret/ai-top-100-kakao-admin-key.txt
+  openai_api_key:
+    file: .local/secret/OpenAI_API_KEY
+  cloudflare_tunnel_token:
+    file: .local/secret/cloudflare_tunnel_token
+
+volumes:
+  postgres_data:

@@ -1,0 +1,7 @@
+id: equipment_demo
+version: '1.0.0'
+dataset_version: 'demo-2026-11-01-r2'
+description: 합성 장비 재고와 예약을 조회하는 대회 전 검증용 팩
+tools_module: tools.py
+allowed_tools: [check_availability, get_source, calculate]
+mcp: []

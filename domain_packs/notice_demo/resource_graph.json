@@ -1,0 +1,1 @@
+{"nodes":[{"id":"N-001","kind":"source"},{"id":"N-001-C1","kind":"correction"},{"id":"lookup_notice","kind":"tool"}],"edges":[{"from":"N-001-C1","to":"N-001","relation":"corrects_deadline"},{"from":"lookup_notice","to":"N-001-C1","relation":"reads"}]}
