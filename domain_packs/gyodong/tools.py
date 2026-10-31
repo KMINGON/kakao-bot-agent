@@ -151,6 +151,29 @@ def _current_choice_guard(api_id, parameters, body, state):
     return "최신 고객 발화에서 이 조치를 요청·선택했는지 명확히 확인해야 합니다. 가능 여부 질문이나 번호 확인만으로 접수하지 마세요."
 
 
+def _shipping_guidance(result, state):
+    text = _latest_customer_text(state)
+    verified_partial = (result.get("status") == "partial" and isinstance(result.get("data"), dict)
+                        and result["data"].get("ownership") == "verified")
+    if ((result.get("status") != "ok" and not verified_partial) or "API-28" not in _requested_actions(text)
+            or not re.search(r"다음\s*(?:배|운송편)", text)):
+        return result
+    rows = [result] if result.get("api_id") else result.get("data", {}).get("observations", [])
+    shipments = [shipment for row in rows if row.get("api_id") in {"API-10", "API-11"}
+                 and row.get("status") == "ok"
+                 for shipment in (row.get("data", []) if isinstance(row.get("data"), list) else [row.get("data")])
+                 if isinstance(shipment, dict) and shipment.get("status") == "READY"
+                 and "picked_up_at" in shipment and shipment["picked_up_at"] is None
+                 and isinstance(shipment.get("shipment_id"), str) and shipment["shipment_id"]]
+    if len(shipments) != 1:
+        return result
+    parameters = {"shipment_id": shipments[0]["shipment_id"]}
+    if _current_choice_guard("API-28", parameters, {}, state):
+        return result
+    return {**result, "next_step": "고객이 다음 배·운송편 재출고를 명시적으로 요청했고 이 배송은 READY·집하 전입니다. READY라는 이유만으로 재출고 접수 불가라고 판단하지 마세요. D017·D021·D008 원문을 실제 조회해 적용 사유·조건과 고객 선택을 확인한 뒤 API-28에 parameters="
+            + json.dumps(parameters, ensure_ascii=False) + ", body={}로 접수할 수 있습니다. 희망 날짜는 필수 입력이 아닙니다. READY는 집하 전이라는 상태만 뜻하며 포장 경과 시간·신선도·변질 여부를 증명하지 않습니다. 이 조회는 접수가 아니며 결항 원인·운송 재개일·도착일을 추정하지 마세요."}
+
+
 def submission_guard(api_id, parameters, body, state, policy_source_ids,
                      customer_confirmation, policy_reason):
     if not state.get("tc_id"):
@@ -280,7 +303,7 @@ def build_tools(data):
             "next_line": end + 1 if end < len(lines) else None},
             "evidence": [{"source_id": source_id}], "effect": "read_only"}, policy_reads={source_id: True})
 
-    @tool(description="정확한 고객 대상의 업무 데이터를 조회한다. TC는 대화 상태에서 자동으로 넣는다. parameters에는 아래 이름만 사용한다.\n" + api.describe("GET"))
+    @tool(description="업무 데이터를 조회한다. 공개 상품·재고(API-01/02/21)와 프로모션(API-20)은 고객의 최종 선택·주문번호가 없어도 공식 자료의 관련 SKU·코드 후보로 조건을 조회할 수 있다. 후보 조회는 해당 고객의 적용 자격·사용·할인 적용 확정이 아니다. 개별 주문·회원·배송·결제는 인입 계정의 권한과 고객이 확인한 대상을 따른다. TC는 대화 상태에서 자동으로 넣는다. parameters에는 아래 이름만 사용한다.\n" + api.describe("GET"))
     async def action_get(api_id: str, parameters: dict, runtime: ToolRuntime) -> Command:
         if not runtime.state.get("tc_id"):
             return _message(runtime, _failure("현재 상담의 TC ID를 알려 주세요. 임의 ID로 호출하지 않습니다."))
@@ -294,7 +317,7 @@ def build_tools(data):
         key = api_id + ":" + json.dumps(parameters, sort_keys=True, ensure_ascii=False)
         if result["status"] == "ok":
             observations[key] = result
-        return _message(runtime, result, action_observations=observations)
+        return _message(runtime, _shipping_guidance(result, runtime.state), action_observations=observations)
 
     @tool(description="정책·정확한 대상 조회·고객 의사를 확인한 뒤 업무 요청을 접수한다. 정책은 API가 검사하지 않는다. 성공도 SUBMITTED 접수이며 실제 지급·상태 변경 완료가 아니다. customer_confirmation은 서버가 최신 고객 발화 원문으로 기록하며 현재 조치 선택을 검사한다. policy_source_ids는 검색/조회한 정책 출처, policy_reason은 적용 조건·예외 판단이다. 자동 이관/API-35와 메모/API-26은 고객 인용을 비워도 된다. API-35의 issue_key는 주문번호:식품안전 또는 주문번호:광고정정처럼 대상·사안별로 정하고 재시도에 그대로 유지한다. 같은 레인의 서로 다른 사안은 다른 issue_key를 사용한다. issue_key는 API 본문에 넣지 않는다. 재시도는 같은 본문, replace_previous는 고객이 기존 접수 변경을 명시한 때만 true이며 API-35 본문 변경에는 쓰지 못한다.\n" + api.describe("POST"))
     async def action_submit(api_id: str, parameters: dict, body: dict,
@@ -348,4 +371,5 @@ def build_tools(data):
     sys.modules[order_spec.name] = order_module
     exec(compile(order_path.read_bytes(), str(order_path), "exec"), order_module.__dict__)
     return [case_context, search_policy, read_policy, action_get, action_submit, calculate,
-            module.build_media_tool(secret("OPENAI_API_KEY")), order_module.build_order_tool(api, access)]
+            module.build_media_tool(secret("OPENAI_API_KEY")),
+            order_module.build_order_tool(api, access, result_guidance=_shipping_guidance)]

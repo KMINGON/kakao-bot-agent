@@ -178,12 +178,14 @@ async def inspect_order_context(api, access, order_no: str, detail: str, state: 
     return finish()
 
 
-def build_order_tool(api, access):
+def build_order_tool(api, access, result_guidance=None):
     @tool
     async def inspect_order(order_no: str, detail: Literal["shipping", "quality", "payment"],
                             runtime: ToolRuntime) -> Command:
         """고객이 직접 준 주문번호를 공식 로그인 계정과 대조한 뒤 연결 기록을 조회한다. shipping은 주문·배송, quality는 품질·신선도·로트·조사·신고 건수, payment는 결제 승인 기록까지 읽는다. 실행·접수하지 않는다. 다른 계정 주문이나 추정 번호는 조회·공개하지 않으며 부분 결과를 전체 부재로 해석하지 않는다."""
         result, observations = await inspect_order_context(api, access, order_no, detail, runtime.state)
+        if result_guidance is not None:
+            result = result_guidance(result, runtime.state)
         return Command(update={"action_observations": observations, "messages": [ToolMessage(
             content=json.dumps(result, ensure_ascii=False), tool_call_id=runtime.tool_call_id)]})
     return inspect_order

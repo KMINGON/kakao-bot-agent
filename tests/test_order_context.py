@@ -89,9 +89,84 @@ async def run(modules, records, detail="quality", current=None, overrides=None):
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
         api = ActionAPI(spec, "test-only", client=client)
-        tool = module.build_order_tool(api, access)
+        tool = module.build_order_tool(api, access, result_guidance=load("tools")._shipping_guidance)
         command = await tool.coroutine(ORDER, detail, SimpleNamespace(state=current or state(), tool_call_id="inspect-test"))
     return json.loads(command.update["messages"][0].content), command.update["action_observations"], calls
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("다음 배로 다시 보내주세요. 오래 포장되면 상하지 않을까요?", True),
+    ("다음 운송편으로 보내주세요.", True),
+    ("다음 배로 보내줄 수 있나요?", False),
+    ("다음 배로 보내지 마세요.", False),
+    ("다음 배로 보내주세요. 취소합니다.", False),
+    ("다음 배로 보내주세요. 전액 환불도 해주세요.", False),
+    ('"다음 배로 보내주세요"라고 말하면 되나요?', False),
+    ("배송이 언제 오나요?", False),
+    ("다시 보내주세요.", False),
+])
+async def test_next_transport_guidance_is_limited_to_explicit_choice(modules, records, text, expected):
+    current = state(text=f"주문 {ORDER}입니다. " + text)
+    result, observations, calls = await run(modules, records, detail="shipping", current=current)
+    assert ("next_step" in result) is expected
+    assert all(call[3] == "GET" for call in calls)
+    assert not any("next_step" in row for row in observations.values())
+    assert not any(row["source_id"].startswith("D") for row in result["evidence"])
+    if expected:
+        assert '"shipment_id": "SHIP-TEST"' in result["next_step"] and "body={}" in result["next_step"]
+        assert "D017·D021·D008 원문을 실제 조회" in result["next_step"]
+
+
+@pytest.mark.parametrize("status,picked_up_at,owner", [
+    ("IN_TRANSIT", "2037-06-27T09:00:00+09:00", "MB-SELF"),
+    ("READY", "2037-06-27T09:00:00+09:00", "MB-SELF"),
+    ("READY", None, "MB-OTHER"),
+])
+async def test_next_transport_guidance_requires_owned_ready_uncollected_shipment(modules, records, status, picked_up_at, owner):
+    records["API-11"][0].update(status=status, picked_up_at=picked_up_at)
+    records["API-07"]["member_id"] = owner
+    result, _, _ = await run(modules, records, detail="shipping",
+        current=state(text=f"주문 {ORDER} 다음 배로 보내주세요."))
+    assert "next_step" not in result
+
+
+@pytest.mark.parametrize("api_id,parameters", [("API-10", {"shipment_id": "SHIP-TEST"}), ("API-11", {"order_no": ORDER})])
+async def test_direct_shipping_queries_return_same_scoped_guidance(records, monkeypatch, api_id, parameters):
+    records["API-10"] = records["API-11"][0]
+    calls = []
+    async def fake(self, operation, **kwargs):
+        calls.append((operation, kwargs.get("method", "GET")))
+        return {"api_id": operation, "parameters": kwargs["parameters"], "status": "ok", "data": records[operation],
+                "effect": "read_only", "evidence": [{"source_id": operation}]}
+    monkeypatch.setattr(ActionAPI, "request", fake)
+    tool = next(tool for tool in load("tools").build_tools({}) if tool.name == "action_get")
+    current = state(text=f"주문 {ORDER} 다음 배로 보내주세요.")
+    if api_id == "API-10":
+        shipping = await tool.coroutine("API-11", {"order_no": ORDER},
+            SimpleNamespace(state=current, tool_call_id="known-shipping"))
+        current["action_observations"].update(shipping.update["action_observations"])
+    command = await tool.coroutine(api_id, parameters, SimpleNamespace(state=current, tool_call_id="direct-shipping"))
+    result = json.loads(command.update["messages"][0].content)
+    assert "API-28" in result["next_step"] and "SHIP-TEST" in result["next_step"]
+    assert all(method == "GET" for _, method in calls)
+    assert not any(row["source_id"].startswith("D") for row in result["evidence"])
+
+
+@pytest.mark.parametrize("shipping_failure", [False, True])
+async def test_partial_quality_uses_only_successful_shipping_for_next_transport(modules, records, shipping_failure):
+    overrides = {"API-04": httpx.Response(404)}
+    if shipping_failure:
+        overrides["API-11"] = httpx.Response(503)
+    result, _, _ = await run(modules, records, detail="quality", overrides=overrides,
+        current=state(text=f"주문 {ORDER} 다음 배로 보내주세요."))
+    assert result["status"] == "partial" and result["data"]["ownership"] == "verified"
+    shipping = next(row for row in result["data"]["observations"] if row["api_id"] == "API-11")
+    assert (shipping["status"] == "ok") is not shipping_failure
+    assert ("next_step" in result) is not shipping_failure
+    if not shipping_failure:
+        assert "READY는 집하 전이라는 상태만" in result["next_step"]
+        missing = next(row for row in result["data"]["observations"] if row["api_id"] == "API-04")
+        assert missing["http_status"] == 404
 
 
 async def test_quality_follows_only_owned_links_and_redacts_private_fields(modules, records):
