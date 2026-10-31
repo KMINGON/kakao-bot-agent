@@ -19,15 +19,20 @@ class BudgetExceeded(RuntimeError):
 
 
 def estimated_model_cost(model: str, input_tokens: int, cached_input_tokens: int,
-                         output_tokens: int) -> float | None:
+                         output_tokens: int, service_tier: str | None = None) -> float | None:
     # Standard short-context USD per 1M tokens; runtime input limit is below 272K.
     rates = {"gpt-5.4-mini": (.75, .075, 4.5),
              "gpt-5.4-mini-2026-03-17": (.75, .075, 4.5),
              "gpt-6.1-sol": (2, .10, 10)}.get(model)
     if rates is None:
         return None
+    multiplier = {None: 1, "default": 1}.get(service_tier)
+    if model == "gpt-6.1-sol":
+        multiplier = {None: 1, "default": 1, "fast": 2, "priority": 2, "ultrafast": 6}.get(service_tier)
+    if multiplier is None:
+        return None
     return round((max(0, input_tokens - cached_input_tokens) * rates[0]
-                  + cached_input_tokens * rates[1] + output_tokens * rates[2]) / 1_000_000, 8)
+                  + cached_input_tokens * rates[1] + output_tokens * rates[2]) * multiplier / 1_000_000, 8)
 
 
 @dataclass
@@ -44,6 +49,7 @@ class RunBudget:
     cached_input_tokens: int = 0
     trace: list[dict] = field(default_factory=list)
     model_name: str = "gpt-5.4-mini-2026-03-17"
+    service_tier: str | None = None
 
     def remaining(self) -> float:
         left = self.deadline_monotonic - time.monotonic()
@@ -82,16 +88,25 @@ class RunBudget:
         media_output = sum(item["usage"].get("output_tokens", 0) for item in media)
         media_cached = sum((item["usage"].get("input_tokens_details") or {}).get("cached_tokens", 0)
                            for item in media)
-        cost = estimated_model_cost(self.model_name, self.input_tokens - media_input,
-            self.cached_input_tokens - media_cached, self.output_tokens - media_output)
-        for item in media:
+        calls = [item for item in self.trace if item.get("kind") == "model_usage"]
+        cost = estimated_model_cost(self.model_name,
+            self.input_tokens - media_input - sum(item["input_tokens"] for item in calls),
+            self.cached_input_tokens - media_cached - sum(item["cached_input_tokens"] for item in calls),
+            self.output_tokens - media_output - sum(item["output_tokens"] for item in calls), self.service_tier)
+        # With complete recorded calls, an unknown configured tier does not erase known actual billing.
+        if calls and self.input_tokens == media_input + sum(item["input_tokens"] for item in calls) \
+                and self.output_tokens == media_output + sum(item["output_tokens"] for item in calls):
+            cost = 0.0
+        for item in [*media, *calls]:
             extra = item.get("estimated_cost_usd")
             cost = None if cost is None or extra is None else round(cost + extra, 8)
+        tiers = {item["service_tier"] for item in calls} or {self.service_tier or "default"}
         return {"model_calls": self.model_calls, "tool_calls": self.tool_calls,
                 "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
                 "cached_input_tokens": self.cached_input_tokens,
                 "estimated_cost_usd": cost,
-                "pricing_model": self.model_name}
+                "pricing_model": self.model_name,
+                "pricing_service_tier": next(iter(tiers)) if len(tiers) == 1 else "mixed"}
 
 
 _ENCODER = tiktoken.get_encoding("o200k_base")
@@ -143,6 +158,15 @@ class BudgetedChatOpenAI(ChatOpenAI):
             budget.input_tokens += usage.get("input_tokens", 0)
             budget.output_tokens += usage.get("output_tokens", 0)
             budget.cached_input_tokens += usage.get("input_token_details", {}).get("cache_read", 0)
+            metadata = generation.message.response_metadata or {}
+            tier = metadata.get("service_tier") or budget.service_tier
+            model = metadata.get("model_name") or metadata.get("model") or budget.model_name
+            incoming, outgoing = usage.get("input_tokens", 0), usage.get("output_tokens", 0)
+            cached = usage.get("input_token_details", {}).get("cache_read", 0)
+            budget.trace.append({"kind": "model_usage", "model": model,
+                "service_tier": tier or "default", "input_tokens": incoming,
+                "output_tokens": outgoing, "cached_input_tokens": cached,
+                "estimated_cost_usd": estimated_model_cost(model, incoming, cached, outgoing, tier)})
         budget.trace.append({"kind": "model_end", "elapsed_ms": round((time.monotonic() - started) * 1000)})
         return result
 

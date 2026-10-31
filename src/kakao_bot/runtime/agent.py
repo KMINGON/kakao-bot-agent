@@ -138,10 +138,11 @@ def checkpoint_evidence(messages, pack: LoadedPack, event_id: str) -> tuple[set[
     return seen, results
 
 
-def event_checkpoint_usage(messages, event_id: str, model_name: str = "gpt-5.4-mini-2026-03-17") -> dict:
+def event_checkpoint_usage(messages, event_id: str, model_name: str = "gpt-5.4-mini-2026-03-17",
+                           service_tier: str | None = None) -> dict:
     current = False
     usage = {"model_calls": 0, "input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
-    costs, models = [], set()
+    costs, models, tiers = [], set(), set()
     for message in messages:
         if isinstance(message, HumanMessage):
             current = message.id == event_id
@@ -155,16 +156,23 @@ def event_checkpoint_usage(messages, event_id: str, model_name: str = "gpt-5.4-m
                 usage["pricing_model_fallback"] = "configured_model"
             priced_model = recorded_model or model_name
             models.add(priced_model)
+            tier = message.response_metadata.get("service_tier") or service_tier
+            tiers.add(tier or "default")
             costs.append(estimated_model_cost(priced_model, message.usage_metadata.get("input_tokens", 0),
                 message.usage_metadata.get("input_token_details", {}).get("cache_read", 0),
-                message.usage_metadata.get("output_tokens", 0)))
+                message.usage_metadata.get("output_tokens", 0), service_tier=tier))
     usage["estimated_cost_usd"] = None if None in costs else round(sum(costs), 8)
     usage["pricing_model"] = next(iter(models)) if len(models) == 1 else "mixed" if models else model_name
+    usage["pricing_service_tier"] = next(iter(tiers)) if len(tiers) == 1 else "mixed" if tiers else service_tier or "default"
     return usage
 
 
 def merge_checkpoint_usage(usage: dict, prior_usage: dict) -> None:
     usage["recovered_checkpoint_usage"] = prior_usage
+    if not usage["model_calls"]:
+        usage["pricing_service_tier"] = prior_usage.get("pricing_service_tier", "default")
+    elif prior_usage["model_calls"] and usage.get("pricing_service_tier", "default") != prior_usage.get("pricing_service_tier", "default"):
+        usage["pricing_service_tier"] = "mixed"
     if not usage["model_calls"]:
         usage["pricing_model"] = prior_usage["pricing_model"]
     elif prior_usage["model_calls"] and usage["pricing_model"] != prior_usage["pricing_model"]:
@@ -200,6 +208,7 @@ class AgentRuntime:
                 model=self.config.model_name, api_key=self.config.openai_api_key,
                 use_responses_api=True, reasoning_effort="low", max_tokens=self.config.max_output_tokens,
                 timeout=self.config.model_timeout_seconds, max_retries=0,
+                **({"service_tier": self.config.service_tier} if self.config.service_tier else {}),
                 profile={"max_input_tokens": self.config.max_input_tokens,
                          "tool_calling": True, "structured_output": True},
             )
@@ -268,7 +277,7 @@ class AgentRuntime:
             raise TimeoutError("Agent deadline expired")
         budget = RunBudget(self.config.max_model_calls, self.config.max_tool_calls,
             self.config.max_input_tokens, time.monotonic() + remaining, self.config.tool_timeout_seconds,
-            model_name=self.config.model_name)
+            model_name=self.config.model_name, service_tier=self.config.service_tier)
         token = active_budget.set(budget)
         prior_usage: dict = {}
         try:
@@ -283,7 +292,7 @@ class AgentRuntime:
                     raise ValueError("Thread belongs to a different pack version")
                 same_event = state.metadata and state.metadata.get("event_id") == event_id
                 prior_usage = event_checkpoint_usage(state.values.get("messages", []), event_id,
-                    self.config.model_name) if same_event else {}
+                    self.config.model_name, self.config.service_tier) if same_event else {}
                 if same_event and not state.next and state.values.get("structured_response") is not None:
                     seen, observed = checkpoint_evidence(state.values.get("messages", []), pack, event_id)
                     answer = validate_answer(state.values["structured_response"], pack, seen)

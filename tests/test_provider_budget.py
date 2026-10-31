@@ -10,6 +10,30 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from kakao_bot.runtime import AgentRuntime
 from kakao_bot.runtime.policy import BudgetExceeded, BudgetedChatOpenAI, RunBudget, active_budget, count_context_tokens
+from kakao_bot.runtime.policy import estimated_model_cost
+
+
+@pytest.mark.parametrize("tier,multiplier", [(None, 1), ("default", 1), ("fast", 2), ("priority", 2), ("ultrafast", 6)])
+def test_sol_service_tier_prices(tier, multiplier):
+    assert estimated_model_cost("gpt-6.1-sol", 1_000_000, 200_000, 100_000, tier) == pytest.approx(2.62 * multiplier)
+    assert estimated_model_cost("gpt-6.1-sol", 100, 0, 20, "unrecognized") is None
+
+
+async def test_actual_default_tier_overrides_requested_ultrafast(monkeypatch):
+    async def fake_generate(self, messages, **kwargs):
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="ok",
+            response_metadata={"model_name": "gpt-6.1-sol", "service_tier": "default"},
+            usage_metadata={"input_tokens": 100, "output_tokens": 10, "total_tokens": 110}))])
+    monkeypatch.setattr(ChatOpenAI, "_agenerate", fake_generate)
+    model = BudgetedChatOpenAI(api_key="offline", use_responses_api=True)
+    budget = RunBudget(1, 1, 1500, time.monotonic() + 5, model_name="gpt-6.1-sol", service_tier="ultrafast")
+    token = active_budget.set(budget)
+    try:
+        await model._agenerate([HumanMessage(content="hello")])
+    finally:
+        active_budget.reset(token)
+    assert budget.usage()["estimated_cost_usd"] == pytest.approx(.0003)
+    assert budget.usage()["pricing_service_tier"] == "default"
 from test_runtime import ScriptedModel, answer, config, tool_call
 
 

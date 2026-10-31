@@ -35,6 +35,7 @@ class Settings:
     packs_root: Path = Path("domain_packs")
     mode: str = "agent"
     model_name: str = "gpt-5.4-mini-2026-03-17"
+    service_tier: str | None = None
     runtime_revision: str = "v1"
     worker_concurrency: int = 1
     run_timeout_seconds: int = 40
@@ -59,6 +60,9 @@ class Settings:
         mode = os.getenv("BOT_MODE", "agent")
         if mode not in {"agent", "echo"}:
             raise ValueError("BOT_MODE must be agent or echo")
+        service_tier = os.getenv("MODEL_SERVICE_TIER", "").strip() or None
+        if service_tier not in {None, "default", "fast", "priority", "ultrafast"}:
+            raise ValueError("MODEL_SERVICE_TIER must be default, fast, priority, ultrafast, or empty")
         return cls(
             database_url=database_url,
             webhook_secret=secret("KAKAO_WEBHOOK_SECRET"),
@@ -72,6 +76,7 @@ class Settings:
             packs_root=Path(os.getenv("PACKS_ROOT", "domain_packs")),
             mode=mode,
             model_name=os.getenv("MODEL_NAME", "gpt-5.4-mini-2026-03-17"),
+            service_tier=service_tier,
             runtime_revision=os.getenv("RUNTIME_REVISION", "v1"),
             worker_concurrency=integer("WORKER_CONCURRENCY", 1, 1, 8),
             run_timeout_seconds=integer("AGENT_RUN_CAP_SECONDS", 40, 5, 40),

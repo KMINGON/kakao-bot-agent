@@ -26,6 +26,7 @@ class RuntimeConfig:
     database_url: str
     openai_api_key: str = field(repr=False)
     model_name: str = "gpt-5.4-mini-2026-03-17"
+    service_tier: str | None = None
     packs_root: Path = Path("domain_packs")
     max_model_calls: int = 8
     max_tool_calls: int = 12

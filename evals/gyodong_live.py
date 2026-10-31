@@ -48,7 +48,7 @@ def runtime_provenance(snapshot: Path, config: RuntimeConfig) -> dict:
             "installed_distributions": dict(sorted((dist.metadata["Name"], dist.version)
                                                     for dist in distributions() if dist.metadata["Name"])),
             "effective_runtime_config": {name: getattr(config, name) for name in (
-                "model_name", "max_model_calls", "max_tool_calls", "max_input_tokens", "max_output_tokens",
+                "model_name", "service_tier", "max_model_calls", "max_tool_calls", "max_input_tokens", "max_output_tokens",
                 "run_timeout_seconds", "tool_timeout_seconds", "model_timeout_seconds",
                 "summary_trigger_tokens", "summary_keep_messages")}}
 
@@ -120,6 +120,7 @@ async def evaluate(args) -> int:
     settings = Settings.from_env()
     config = RuntimeConfig(database_url="", openai_api_key=settings.openai_api_key,
                            model_name=settings.model_name, packs_root=packs_root,
+                           service_tier=settings.service_tier,
                            max_model_calls=settings.max_model_calls, max_tool_calls=settings.max_tool_calls,
                            max_input_tokens=settings.max_input_tokens, max_output_tokens=settings.max_output_tokens,
                            summary_trigger_tokens=settings.summary_trigger_tokens,

@@ -137,6 +137,7 @@ async def main() -> None:
             config = RuntimeConfig(
                 database_url=settings.database_url, openai_api_key=settings.openai_api_key,
                 model_name=settings.model_name, packs_root=settings.packs_root,
+                service_tier=settings.service_tier,
                 max_model_calls=settings.max_model_calls, max_tool_calls=settings.max_tool_calls,
                 max_input_tokens=settings.max_input_tokens, max_output_tokens=settings.max_output_tokens,
                 summary_trigger_tokens=settings.summary_trigger_tokens,
