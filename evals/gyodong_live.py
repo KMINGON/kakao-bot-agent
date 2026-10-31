@@ -122,6 +122,7 @@ async def evaluate(args) -> int:
                            model_name=settings.model_name, packs_root=packs_root,
                            max_model_calls=settings.max_model_calls, max_tool_calls=settings.max_tool_calls,
                            max_input_tokens=settings.max_input_tokens, max_output_tokens=settings.max_output_tokens,
+                           summary_trigger_tokens=settings.summary_trigger_tokens,
                            run_timeout_seconds=min(settings.run_timeout_seconds, 40))
     downloads = json.loads(Path(".local/ai_top_100/raw/public-test-case-downloads.json").read_text())
     followups = json.loads(Path(args.turns_file).read_text()) if args.turns_file else {}

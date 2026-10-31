@@ -24,7 +24,7 @@ from langgraph.graph import END
 from ..contracts import MAX_RESPONSE_CHARS
 from .mcp import load_mcp_tools
 from .packs import LoadedPack, load_pack
-from .policy import BudgetedChatOpenAI, RunBudget, ToolPolicyMiddleware, active_budget, count_context_tokens
+from .policy import BudgetedChatOpenAI, RunBudget, ToolPolicyMiddleware, active_budget, count_context_tokens, estimated_model_cost
 from .schema import AnswerEnvelope, RunContext, RuntimeConfig, RuntimeResult
 
 
@@ -39,7 +39,7 @@ SYSTEM_PROMPT = """당신은 카카오톡에서 짧고 정확하게 업무를 �
 도구 중단·시간 초과로 결과가 불명확하면 결과 미확인이라고 알리고 기존 접수 본문과 식별자를 보존한다. 성공·실패를 추측하지 않는다.
 없는 날짜·장비·조건을 채우지 말고 필요한 정보를 질문한다. 도구 오류는 오류라고 설명한다.
 대화 요약은 보조 기억이다. 정정된 업무 사실은 다시 원자료로 조회한다.
-합성 팩으로 업무 답변을 할 때 합성 검증 자료 기준임을 짧게 밝힌다.
+demo=true인 데모 팩으로 업무 답변을 할 때만 합성 검증 자료 기준임을 짧게 밝힌다. 일반 고객 상담에서는 TC·시험·합성·모델 등 내부 구현 맥락을 답변에 넣지 않는다.
 claims와 evidence_ids에는 실제 출처 ID를 넣는다. 일반 인사나 사용자가 알려준 별칭은 업무 근거가 필요 없다.
 순수 계산 결과와 사용자가 알려준 별칭은 answer에 적고 claims는 빈 목록으로 둔다.
 """
@@ -138,9 +138,10 @@ def checkpoint_evidence(messages, pack: LoadedPack, event_id: str) -> tuple[set[
     return seen, results
 
 
-def event_checkpoint_usage(messages, event_id: str) -> dict:
+def event_checkpoint_usage(messages, event_id: str, model_name: str = "gpt-5.4-mini-2026-03-17") -> dict:
     current = False
     usage = {"model_calls": 0, "input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
+    costs, models = [], set()
     for message in messages:
         if isinstance(message, HumanMessage):
             current = message.id == event_id
@@ -149,9 +150,28 @@ def event_checkpoint_usage(messages, event_id: str) -> dict:
             usage["input_tokens"] += message.usage_metadata.get("input_tokens", 0)
             usage["output_tokens"] += message.usage_metadata.get("output_tokens", 0)
             usage["cached_input_tokens"] += message.usage_metadata.get("input_token_details", {}).get("cache_read", 0)
-    usage["estimated_cost_usd"] = round(((usage["input_tokens"] - usage["cached_input_tokens"]) * .75
-        + usage["cached_input_tokens"] * .075 + usage["output_tokens"] * 4.5) / 1_000_000, 8)
+            recorded_model = message.response_metadata.get("model_name") or message.response_metadata.get("model")
+            if not recorded_model:
+                usage["pricing_model_fallback"] = "configured_model"
+            priced_model = recorded_model or model_name
+            models.add(priced_model)
+            costs.append(estimated_model_cost(priced_model, message.usage_metadata.get("input_tokens", 0),
+                message.usage_metadata.get("input_token_details", {}).get("cache_read", 0),
+                message.usage_metadata.get("output_tokens", 0)))
+    usage["estimated_cost_usd"] = None if None in costs else round(sum(costs), 8)
+    usage["pricing_model"] = next(iter(models)) if len(models) == 1 else "mixed" if models else model_name
     return usage
+
+
+def merge_checkpoint_usage(usage: dict, prior_usage: dict) -> None:
+    usage["recovered_checkpoint_usage"] = prior_usage
+    if not usage["model_calls"]:
+        usage["pricing_model"] = prior_usage["pricing_model"]
+    elif prior_usage["model_calls"] and usage["pricing_model"] != prior_usage["pricing_model"]:
+        usage["pricing_model"] = "mixed"
+    for key in ("model_calls", "input_tokens", "output_tokens", "cached_input_tokens", "estimated_cost_usd"):
+        left, right = usage[key], prior_usage.get(key, 0)
+        usage[key] = None if left is None or right is None else left + right
 
 
 def unfinished_tool_calls(messages) -> list[dict]:
@@ -247,7 +267,8 @@ class AgentRuntime:
         if remaining <= 0:
             raise TimeoutError("Agent deadline expired")
         budget = RunBudget(self.config.max_model_calls, self.config.max_tool_calls,
-            self.config.max_input_tokens, time.monotonic() + remaining, self.config.tool_timeout_seconds)
+            self.config.max_input_tokens, time.monotonic() + remaining, self.config.tool_timeout_seconds,
+            model_name=self.config.model_name)
         token = active_budget.set(budget)
         prior_usage: dict = {}
         try:
@@ -261,7 +282,8 @@ class AgentRuntime:
                 if state.metadata and state.metadata.get("pack_digest") not in {None, pack.digest}:
                     raise ValueError("Thread belongs to a different pack version")
                 same_event = state.metadata and state.metadata.get("event_id") == event_id
-                prior_usage = event_checkpoint_usage(state.values.get("messages", []), event_id) if same_event else {}
+                prior_usage = event_checkpoint_usage(state.values.get("messages", []), event_id,
+                    self.config.model_name) if same_event else {}
                 if same_event and not state.next and state.values.get("structured_response") is not None:
                     seen, observed = checkpoint_evidence(state.values.get("messages", []), pack, event_id)
                     answer = validate_answer(state.values["structured_response"], pack, seen)
@@ -284,9 +306,7 @@ class AgentRuntime:
                 usage = budget.usage()
                 usage["new_model_calls"] = usage["model_calls"]
                 if prior_usage:
-                    usage["recovered_checkpoint_usage"] = prior_usage
-                    for key in ("model_calls", "input_tokens", "output_tokens", "cached_input_tokens", "estimated_cost_usd"):
-                        usage[key] += prior_usage.get(key, 0)
+                    merge_checkpoint_usage(usage, prior_usage)
                 return RuntimeResult(render_answer(answer, demo=bool(pack.data.get("demo"))), usage, budget.trace,
                                      answer.model_dump(), bool(same_event))
         except Exception as error:
@@ -294,9 +314,7 @@ class AgentRuntime:
             error.usage = budget.usage()
             error.usage["new_model_calls"] = error.usage["model_calls"]
             if prior_usage:
-                error.usage["recovered_checkpoint_usage"] = prior_usage
-                for key in ("model_calls", "input_tokens", "output_tokens", "cached_input_tokens", "estimated_cost_usd"):
-                    error.usage[key] += prior_usage.get(key, 0)
+                merge_checkpoint_usage(error.usage, prior_usage)
             error.trace = budget.trace
             raise
         finally:

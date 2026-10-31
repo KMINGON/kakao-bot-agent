@@ -42,6 +42,7 @@ class Settings:
     max_tool_calls: int = 12
     max_input_tokens: int = 24000
     max_output_tokens: int = 2048
+    summary_trigger_tokens: int = 18000
     max_body_bytes: int = 65536
     admission_timeout_seconds: float = 0.75
 
@@ -78,4 +79,5 @@ class Settings:
             max_tool_calls=integer("MAX_TOOL_CALLS", 12, 1, 64),
             max_input_tokens=integer("MAX_INPUT_TOKENS", 24000, 2000, 100000),
             max_output_tokens=integer("MAX_OUTPUT_TOKENS", 2048, 128, 8192),
+            summary_trigger_tokens=integer("SUMMARY_TRIGGER_TOKENS", 18000, 1000, 100000),
         )

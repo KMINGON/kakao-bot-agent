@@ -18,6 +18,18 @@ class BudgetExceeded(RuntimeError):
     pass
 
 
+def estimated_model_cost(model: str, input_tokens: int, cached_input_tokens: int,
+                         output_tokens: int) -> float | None:
+    # Standard short-context USD per 1M tokens; runtime input limit is below 272K.
+    rates = {"gpt-5.4-mini": (.75, .075, 4.5),
+             "gpt-5.4-mini-2026-03-17": (.75, .075, 4.5),
+             "gpt-6.1-sol": (2, .10, 10)}.get(model)
+    if rates is None:
+        return None
+    return round((max(0, input_tokens - cached_input_tokens) * rates[0]
+                  + cached_input_tokens * rates[1] + output_tokens * rates[2]) / 1_000_000, 8)
+
+
 @dataclass
 class RunBudget:
     max_model_calls: int
@@ -31,6 +43,7 @@ class RunBudget:
     output_tokens: int = 0
     cached_input_tokens: int = 0
     trace: list[dict] = field(default_factory=list)
+    model_name: str = "gpt-5.4-mini-2026-03-17"
 
     def remaining(self) -> float:
         left = self.deadline_monotonic - time.monotonic()
@@ -62,13 +75,23 @@ class RunBudget:
                            "estimated_input_tokens": estimated})
 
     def usage(self) -> dict:
-        uncached = max(0, self.input_tokens - self.cached_input_tokens)
+        # Image analysis retains its own mini model and is already in token totals.
+        media = [item for item in self.trace if item.get("kind") == "media_usage"
+                 and item.get("included_in_primary_token_totals")]
+        media_input = sum(item["usage"].get("input_tokens", 0) for item in media)
+        media_output = sum(item["usage"].get("output_tokens", 0) for item in media)
+        media_cached = sum((item["usage"].get("input_tokens_details") or {}).get("cached_tokens", 0)
+                           for item in media)
+        cost = estimated_model_cost(self.model_name, self.input_tokens - media_input,
+            self.cached_input_tokens - media_cached, self.output_tokens - media_output)
+        for item in media:
+            extra = item.get("estimated_cost_usd")
+            cost = None if cost is None or extra is None else round(cost + extra, 8)
         return {"model_calls": self.model_calls, "tool_calls": self.tool_calls,
                 "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
                 "cached_input_tokens": self.cached_input_tokens,
-                "estimated_cost_usd": round((uncached * .75 + self.cached_input_tokens * .075
-                                              + self.output_tokens * 4.5) / 1_000_000, 8),
-                "pricing_model": "gpt-5.4-mini-2026-03-17"}
+                "estimated_cost_usd": cost,
+                "pricing_model": self.model_name}
 
 
 _ENCODER = tiktoken.get_encoding("o200k_base")

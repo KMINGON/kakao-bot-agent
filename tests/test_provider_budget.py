@@ -13,6 +13,43 @@ from kakao_bot.runtime.policy import BudgetExceeded, BudgetedChatOpenAI, RunBudg
 from test_runtime import ScriptedModel, answer, config, tool_call
 
 
+@pytest.mark.parametrize("model, expected", [
+    ("gpt-5.4-mini-2026-03-17", .001065),
+    ("gpt-6.1-sol", .00262),
+    ("unknown-model", None),
+])
+def test_model_specific_cost_with_cached_input(model, expected):
+    budget = RunBudget(1, 1, 1000, time.monotonic() + 5, model_name=model,
+                       input_tokens=1000, cached_input_tokens=200, output_tokens=100)
+    assert budget.usage()["estimated_cost_usd"] == expected
+    assert budget.usage()["pricing_model"] == model
+
+
+def test_sol_cost_keeps_mini_image_analysis_separate():
+    budget = RunBudget(2, 1, 1000, time.monotonic() + 5, model_name="gpt-6.1-sol",
+                       input_tokens=1100, cached_input_tokens=200, output_tokens=110)
+    budget.trace.append({"kind": "media_usage", "included_in_primary_token_totals": True,
+        "usage": {"input_tokens": 100, "output_tokens": 10}, "estimated_cost_usd": .00012})
+    assert budget.usage()["estimated_cost_usd"] == .00274
+
+
+def test_checkpoint_cost_prices_each_recorded_model_and_preserves_unknown():
+    from kakao_bot.runtime.agent import event_checkpoint_usage, merge_checkpoint_usage
+    def reply(model):
+        return AIMessage(content="ok", response_metadata={"model_name": model},
+            usage_metadata={"input_tokens": 1000, "output_tokens": 100, "total_tokens": 1100,
+                            "input_token_details": {"cache_read": 200}})
+    messages = [HumanMessage(content="hi", id="event"), reply("gpt-5.4-mini-2026-03-17"),
+                reply("gpt-6.1-sol")]
+    usage = event_checkpoint_usage(messages, "event", "gpt-6.1-sol")
+    assert usage["estimated_cost_usd"] == .003685
+    assert usage["pricing_model"] == "mixed"
+    prior = event_checkpoint_usage([HumanMessage(content="hi", id="event"), reply("unknown-model")], "event")
+    merge_checkpoint_usage(usage, prior)
+    assert usage["estimated_cost_usd"] is None
+    assert usage["model_calls"] == 3
+
+
 def test_opaque_reasoning_uses_recorded_tokens_without_mutating_payload():
     request = {"input": [{"type": "reasoning", "id": "rs_test", "encrypted_content": "opaque" * 10000},
                          {"role": "user", "content": "질문"}], "tools": [{"description": "등록된 도구"}]}

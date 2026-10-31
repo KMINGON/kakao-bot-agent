@@ -283,17 +283,23 @@ async def test_domain_hook_overrides_incorrect_quantity_and_marks_demo():
 
 
 @pytest.mark.asyncio
-async def test_completed_checkpoint_restores_recorded_cost_without_new_call():
+@pytest.mark.parametrize("recorded_model, expected_cost", [
+    ("gpt-5.4-mini-2026-03-17", .000165), ("gpt-6.1-sol", .0004),
+])
+async def test_completed_checkpoint_restores_recorded_cost_without_new_call(recorded_model, expected_cost):
     saver = InMemorySaver()
-    output = AIMessage(content=json.dumps(answer("안녕하세요", [])), usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120})
+    output = AIMessage(content=json.dumps(answer("안녕하세요", [])),
+        response_metadata={"model_name": recorded_model},
+        usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120})
     async with AgentRuntime(config(), checkpointer=saver, model=ScriptedModel(responses=[output])) as runtime:
         await runtime.run(text="안녕", thread_id="cost", event_id="c1", pack_ref="equipment_demo", deadline=datetime.now(UTC) + timedelta(seconds=30))
-    async with AgentRuntime(config(), checkpointer=saver, model=ScriptedModel()) as runtime:
+    async with AgentRuntime(config(model_name="gpt-6.1-sol"), checkpointer=saver, model=ScriptedModel()) as runtime:
         result = await runtime.run(text="안녕", thread_id="cost", event_id="c1", pack_ref="equipment_demo", deadline=datetime.now(UTC) + timedelta(seconds=30))
         assert result.usage["new_model_calls"] == 0
         assert result.usage["model_calls"] == 1
         assert result.usage["input_tokens"] == 100
-        assert result.usage["estimated_cost_usd"] > 0
+        assert result.usage["estimated_cost_usd"] == expected_cost
+        assert result.usage["pricing_model"] == recorded_model
 
 
 @pytest.mark.asyncio
