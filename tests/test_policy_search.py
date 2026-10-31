@@ -43,6 +43,9 @@ def search_factory(tmp_path):
     ("곰팡이 부패 수박", "D008", {"D008"}),
     ("가격 인하 차액", "D003", {"D003", "D025"}),
     ("자연감량", "D027", {"D027"}),
+    ("조합장 승인 소개", "D038", {"D038"}),
+    ("직판 위탁 고객 창구", "D038", {"D038", "D030"}),
+    ("기사 연락처 간선", "D038", {"D038"}),
 ])
 def test_general_policy_questions_retrieve_applicable_sources(search_factory, query, first, required):
     result = search_factory()(query)
