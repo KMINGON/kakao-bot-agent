@@ -5,11 +5,11 @@
     "data/action-openapi.json": "20082b8f76e41f5d6f8e2a66be927f80e12540883e36198587ff93f64278911e",
     "data/policies.json": "bfaa1ee46dc83530e377942615ad916bc29ca23fc9884c190909211fabe30ed8",
     "data/records.json": "2419c52d80796a08409a1daf66d0319ce75ea8a6339505fe2efc7623f53d6386",
-    "instructions/AGENTS.md": "6a468bd1513a084c7c9e1284953896acd5a215063b9a3e568f9fff599b46708f",
+    "instructions/AGENTS.md": "924062d72fed9df0e9741448335063154790885d0b711f6fe0894d75d3c2b4e3",
     "media.py": "b263cb9230c1811b7011c834243224b1adb7a7f58f54a3162bb453ae5cf40aa6",
     "order_context.py": "888d353230d5c52d19184a03a7c5e810d7da267d5e1f67d6cd4187fcdbc36dbe",
     "pack.yaml": "e9aeba5a535994a32001f0b1dbd2fa10c622fbf78b85836e6a7fb0317d2c6015",
     "skills/customer-service/SKILL.md": "55906df820d516755136d449acca5c27d8bc6077f2269e35a10b2278e552b9bf",
-    "tools.py": "cabdf4e7a766fe172d989437122e3ed3aef6ed6241bc863e3df73c48ea30aee8"
+    "tools.py": "bb2db7242798e006e7930e25a41b33076df9eaf24f7f3a7d3fd9b5f187873368"
   }
 }

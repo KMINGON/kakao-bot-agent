@@ -157,6 +157,10 @@ async def test_real_graph_tools_checkpoints_and_same_event_recovery():
         assert result.usage["tool_calls"] == 1
         assert not set(model.bound_names) & {"execute", "delete", "task", "write_todos"}
         assert "check_availability" in model.bound_names
+        content = model.requests[0][0].content
+        system = content if isinstance(content, str) else "\n".join(block["text"] for block in content)
+        assert Path("domain_packs/equipment_demo/instructions/AGENTS.md").read_text().strip() in system
+        assert "memory_guidelines" not in system
         state = await runtime.inspect("actor-a", "equipment_demo")
         assert state.metadata["event_id"] == "event-a"
         assert len([m for m in state.values["messages"] if isinstance(m, HumanMessage)]) == 1

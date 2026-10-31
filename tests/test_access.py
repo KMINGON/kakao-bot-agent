@@ -306,6 +306,67 @@ async def test_owned_submissions_still_reach_transport(tool_pack,monkeypatch,api
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('choice,allowed', [
+    ('다음 배로 다시 보내주세요. 기다리겠습니다. 오래 포장돼 있으면 상하지 않을까요?', True),
+    ('다음 운송편으로 보내주세요.', True),
+    ('다음 배로 보내줄 수 있나요?', False),
+    ('다음 배로 보내지 마세요.', False),
+])
+async def test_next_transport_reship_needs_no_date(tool_pack, monkeypatch, choice, allowed):
+    boundary, current = Boundary(), state()
+    current['messages'] = [HumanMessage(content=choice)]
+    await get(boundary, current, 'API-07', {'order_no': SELF})
+    await get(boundary, current, 'API-11', {'order_no': SELF})
+    posts = []
+
+    async def fake(self, operation, **kwargs):
+        if kwargs.get('method') == 'POST':
+            posts.append((operation, kwargs['parameters'], kwargs['body']))
+            return {'status': 'submitted', 'data': {'request_id': 'RSH-test', 'request_status': 'SUBMITTED'}}
+        return await boundary.fetch(operation, kwargs['parameters'])
+
+    monkeypatch.setattr(ActionAPI, 'request', fake)
+    submit = next(tool for tool in tool_pack.python_tools() if tool.name == 'action_submit')
+    command = await submit.coroutine(api_id='API-28', parameters={'shipment_id': 'SHP-OWN'}, body={},
+        policy_source_ids=['D015'], policy_reason='집하 전 결항 배송의 다음 운송편 재출고를 고객이 선택했습니다.',
+        runtime=SimpleNamespace(state=current, tool_call_id='reship'))
+    result = json.loads(command.update['messages'][0].content)
+    assert result['status'] == ('submitted' if allowed else 'needs_input')
+    assert posts == ([('API-28', {'shipment_id': 'SHP-OWN'}, {})] if allowed else [])
+
+
+@pytest.mark.parametrize('refund_order,report_lot,mold,others,status,expected', [
+    (SELF, 'LOT-OWN', 1, 1, 'submitted', True),
+    (OTHER, 'LOT-OWN', 1, 1, 'submitted', False),
+    (SELF, 'LOT-OTHER', 1, 1, 'submitted', False),
+    (SELF, 'LOT-OWN', 0, 1, 'submitted', False),
+    (SELF, 'LOT-OWN', 1, 0, 'submitted', False),
+    (SELF, 'LOT-OWN', 1, 1, 'unknown', False),
+])
+def test_refund_safety_reminder_uses_only_same_order_report(tool_pack, refund_order, report_lot,
+                                                          mold, others, status, expected):
+    current = {'action_observations': {
+        'shipping': {'api_id': 'API-11', 'status': 'ok', 'data': [
+            {'order_no': SELF, 'shipment_id': 'SHP-OWN', 'items': [{'lot_id': 'LOT-OWN'}]}]},
+        'reports': {'api_id': 'API-06', 'status': 'ok', 'parameters': {'lot_id': report_lot},
+                    'data': {'other_customer_ticket_count': others, 'reported_symptom_counts': {'MOLD': mold}}},
+    }}
+    receipt = {'status': status, 'data': {'request_id': 'RFD-test'}}
+    result = tool_pack._module()._receipt_guidance('API-29', {'order_no': refund_order}, receipt, current)
+    assert ('next_step' in result) is expected
+    assert result['data'] == receipt['data']
+    assert 'next_step' not in receipt
+
+
+def test_handoff_receipt_reminds_policy_window_without_claiming_completion(tool_pack):
+    receipt = {'status': 'submitted', 'data': {'escalation_id': 'ESC-test'}}
+    result = tool_pack._module()._receipt_guidance('API-35', {}, receipt, {})
+    assert result['data'] == receipt['data']
+    assert 'D001' in result['next_step'] and '회신 기한' in result['next_step']
+    assert 'next_step' not in receipt
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('api_id,parameters,data',[
     ('API-17',{'approval_no':'PAY-OWN'},{'approval_no':'PAY-OWN','order_no':OTHER}),
     ('API-10',{'shipment_id':'SHP-OWN'},{'shipment_id':'SHP-OWN','order_no':OTHER}),

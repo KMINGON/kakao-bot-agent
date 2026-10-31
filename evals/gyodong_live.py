@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -73,6 +74,12 @@ async def evaluate(args) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     packs_root = output.parent / (output.stem + "-packs")
     shutil.copytree(args.pack_source, packs_root / "gyodong", ignore=shutil.ignore_patterns("__pycache__"))
+    runtime_source = output.parent / (output.stem + "-runtime")
+    shutil.copytree("src", runtime_source / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    for name in ("pyproject.toml", "uv.lock"):
+        shutil.copy2(name, runtime_source / name)
+    runtime_hashes = {str(path.relative_to(runtime_source)): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in sorted(runtime_source.rglob("*")) if path.is_file()}
     lock_pack(packs_root / "gyodong")
     pack = load_pack(packs_root, "gyodong")
     os.environ["ACTION_API_WRITES_ENABLED"] = "true" if args.allow_post else "false"
@@ -89,6 +96,7 @@ async def evaluate(args) -> int:
     report = {"run_id": run_id, "model": config.model_name, "reasoning_effort": args.reasoning_effort,
               "pack": pack.snapshot,
               "frozen_pack": str(pack.root), "started_at": datetime.now(UTC).isoformat(),
+              "frozen_runtime": str(runtime_source), "runtime_sha256": runtime_hashes,
               "scope": "Real model and APIs; in-memory checkpoint; no Kakao/queue measurement",
               "post_enabled": args.allow_post, "followup_fixture": args.turns_file,
               "limits": {"model_calls": config.max_model_calls, "tool_calls": config.max_tool_calls,

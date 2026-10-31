@@ -14,11 +14,11 @@ class Claim(BaseModel):
 
 class AnswerEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["answered", "needs_input", "uncertain"]
-    answer: str = Field(description="사용자에게 보낼 간결한 한국어 답변, 430~450자 이내. 출처를 포함한 최종 답변은 500자 이내")
     claims: list[Claim]
     evidence_ids: list[str]
-    missing_fields: list[str]
+    missing_fields: list[str] = Field(description="고객에게 지금 확인할 필수 정보. 목록에 있으면 answer에서도 실제 질문한다.")
+    status: Literal["answered", "needs_input", "uncertain"]
+    answer: str = Field(description="위에서 확인한 사실·정책 판단·고객 선택지·필수 질문·실제 접수 결과를 빠뜨리지 않는 간결한 한국어 답변, 430~450자 이내. 출처 목록은 서버가 붙이므로 중복하지 않는다. 출처 포함 최종 답변은 500자 이내")
 
 
 @dataclass(frozen=True)
