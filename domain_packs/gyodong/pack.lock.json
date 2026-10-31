@@ -3,13 +3,13 @@
     "access.py": "32b7da7dab2a9fe111e5c37cb37669f76b491ed890911fa07e96507708366ab7",
     "adapters.py": "e997b0fd7662b5ceafd7da01f3587d18ed7b8aa2706a61417b6a7c7d04d7b377",
     "data/action-openapi.json": "20082b8f76e41f5d6f8e2a66be927f80e12540883e36198587ff93f64278911e",
-    "data/policies.json": "8eb8fdb222c0a5b73bb7a051301782dea0c024a3e8f4e049c4727901bef82c34",
-    "data/records.json": "db28cd4af532d143a2b062473148f73e2e5603b04b979d40f4411eb61ccb4a8e",
+    "data/policies.json": "b4a02283e5be67e0e0e08a394fcd022a84a8eb1b65b75716a20699c054353f6c",
+    "data/records.json": "54b2501433ba74b2080fffecad3706e89e355905ebc6700d1f6e182668b9acef",
     "instructions/AGENTS.md": "075e05ce16bc4b06a043c2a8b0a750d71f6649798c54fb1874aec1c26b4ce641",
     "media.py": "b263cb9230c1811b7011c834243224b1adb7a7f58f54a3162bb453ae5cf40aa6",
     "order_context.py": "d46040af5cd72868f21d168c578c9d2e432763418db3cbe03c6eb41f4e8e876f",
     "pack.yaml": "e9aeba5a535994a32001f0b1dbd2fa10c622fbf78b85836e6a7fb0317d2c6015",
-    "skills/customer-service/SKILL.md": "215b270bb223f9d6a0dff2fcd995c1ad2e4b88db70e4b58e1360ba190634f306",
+    "skills/customer-service/SKILL.md": "35302cd377c1f3b83886a8868efc4b4f5b8147203d33a1e23ef9cccff869dd8c",
     "tools.py": "f33b71b7ad6f5ddba8090fe25c41a3511c75465067daa02ddd42472f21273829"
   }
 }
