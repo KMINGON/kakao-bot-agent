@@ -111,15 +111,20 @@ def aggregate_lot_tickets(rows: list[dict], lot_id: str, member_id: str) -> dict
         identity = ("id", ticket_id) if isinstance(ticket_id, str) and ticket_id else ("row", index)
         groups.setdefault(identity, []).append(row)
     counts = {"MOLD": 0, "DAMAGE": 0, "UNKNOWN": 0}
+    other_counts = dict.fromkeys(counts, 0)
     other_count = 0
     for group in groups.values():
         labels = {category(row) for row in group}
-        counts[next(iter(labels)) if len(labels) == 1 else "UNKNOWN"] += 1
-        other_count += all(row.get("member_id") not in {None, member_id} for row in group)
+        label = next(iter(labels)) if len(labels) == 1 else "UNKNOWN"
+        counts[label] += 1
+        if all(row.get("member_id") not in {None, member_id} for row in group):
+            other_count += 1
+            other_counts[label] += 1
     return {"lot_id": lot_id, "ticket_count": len(groups),
             "other_customer_ticket_count": other_count,
             "duplicate_ticket_count": len(rows) - len(groups),
             "reported_symptom_counts": counts, "symptom_basis": "reported_not_confirmed",
+            "other_customer_reported_symptom_counts": other_counts,
             "interpretation": "접수된 증상별 티켓 수이며 하자·귀책 확정이 아닙니다. UNKNOWN은 분류불명이며 0건이 이상 없음을 뜻하지 않습니다.",
             "privacy": "타 고객의 회원·상담 식별자, 개별 시각, 상담 본문, 담당자는 제공하지 않습니다."}
 

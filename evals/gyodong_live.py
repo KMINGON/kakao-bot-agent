@@ -6,10 +6,13 @@ import asyncio
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
+import sys
 import time
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import distributions
 from pathlib import Path
 
 from langchain_core.messages import ToolMessage
@@ -21,6 +24,33 @@ from kakao_bot.settings import Settings
 
 DEFAULT_CASES = ("L-20", "L-60", "Y-24")
 CASES = (*DEFAULT_CASES, "L-03", "L-05", "L-47", "L-23", "L-32", "R-05-a", "Y-16")
+
+
+def runtime_provenance(snapshot: Path, config: RuntimeConfig) -> dict:
+    source_root = Path("src").resolve()
+    loaded = {}
+    for name, module in sorted(sys.modules.copy().items()):
+        if name != "kakao_bot" and not name.startswith("kakao_bot."):
+            continue
+        source = Path(module.__file__).resolve()
+        if not source.is_relative_to(source_root / "kakao_bot"):
+            raise RuntimeError(f"Evaluation imported {name} outside the current src: {source}")
+        relative = source.relative_to(source_root)
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        if digest != hashlib.sha256((snapshot / "src" / relative).read_bytes()).hexdigest():
+            raise RuntimeError(f"Evaluation source differs from its snapshot: {name}")
+        loaded[name] = {"path": str(source), "snapshot_path": str(Path("src") / relative),
+                        "sha256": digest}
+    return {"source_snapshot_note": "Runs imported current-src modules, not the snapshot; paths and source bytes verified before model calls.",
+            "loaded_modules": loaded,
+            "python": {"version": platform.python_version(), "implementation": platform.python_implementation(),
+                       "executable": sys.executable},
+            "installed_distributions": dict(sorted((dist.metadata["Name"], dist.version)
+                                                    for dist in distributions() if dist.metadata["Name"])),
+            "effective_runtime_config": {name: getattr(config, name) for name in (
+                "model_name", "max_model_calls", "max_tool_calls", "max_input_tokens", "max_output_tokens",
+                "run_timeout_seconds", "tool_timeout_seconds", "model_timeout_seconds",
+                "summary_trigger_tokens", "summary_keep_messages")}}
 
 
 def initial_input(tc_id: str, downloads: list[dict]) -> str:
@@ -78,6 +108,8 @@ async def evaluate(args) -> int:
     shutil.copytree("src", runtime_source / "src", ignore=shutil.ignore_patterns("__pycache__"))
     for name in ("pyproject.toml", "uv.lock"):
         shutil.copy2(name, runtime_source / name)
+    (runtime_source / "evals").mkdir()
+    shutil.copy2(__file__, runtime_source / "evals" / "gyodong_live.py")
     runtime_hashes = {str(path.relative_to(runtime_source)): hashlib.sha256(path.read_bytes()).hexdigest()
                       for path in sorted(runtime_source.rglob("*")) if path.is_file()}
     lock_pack(packs_root / "gyodong")
@@ -97,6 +129,7 @@ async def evaluate(args) -> int:
               "pack": pack.snapshot,
               "frozen_pack": str(pack.root), "started_at": datetime.now(UTC).isoformat(),
               "frozen_runtime": str(runtime_source), "runtime_sha256": runtime_hashes,
+              "runtime_provenance": runtime_provenance(runtime_source, config),
               "scope": "Real model and APIs; in-memory checkpoint; no Kakao/queue measurement",
               "post_enabled": args.allow_post, "followup_fixture": args.turns_file,
               "limits": {"model_calls": config.max_model_calls, "tool_calls": config.max_tool_calls,

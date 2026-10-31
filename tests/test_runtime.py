@@ -161,6 +161,9 @@ async def test_real_graph_tools_checkpoints_and_same_event_recovery():
         system = content if isinstance(content, str) else "\n".join(block["text"] for block in content)
         assert Path("domain_packs/equipment_demo/instructions/AGENTS.md").read_text().strip() in system
         assert "memory_guidelines" not in system
+        assert "답변을 보낸 뒤 처리 결과를 계속 조회하거나 먼저 메시지를 보내는 기능이 없다" in system
+        assert "담당자의 회신 기한은 담당자를 주체로 안내하며 생략하지 않는다" in system
+        assert "도구로 실제 접수한 알림 서비스와 고객이 다음 정보를 보내면 확인하겠다는 안내" in system
         state = await runtime.inspect("actor-a", "equipment_demo")
         assert state.metadata["event_id"] == "event-a"
         assert len([m for m in state.values["messages"] if isinstance(m, HumanMessage)]) == 1

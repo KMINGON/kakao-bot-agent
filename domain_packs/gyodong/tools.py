@@ -59,9 +59,21 @@ def _latest_customer_text(state):
                  if isinstance(message, HumanMessage) and isinstance(message.content, str)), "")
 
 
-def _receipt_guidance(api_id, body, result, state):
+def _receipt_guidance(api_id, body, result, state, sources=None):
     if api_id == "API-35" and result.get("status") == "submitted":
-        return {**result, "next_step": "이관은 접수 상태입니다. D001에서 회신 기한을 확인하고 실제 이관번호와 함께 고객에게 안내하세요. 봇이 이 대화 밖에서 자동으로 결과를 확인해 다시 연락하겠다고 약속하지 마세요."}
+        result = {**result, "next_step": "이관은 접수 상태입니다. D001에서 회신 기한을 확인하고 실제 이관번호와 함께 고객에게 안내하세요. 실제 회신 날짜를 계산할 때는 D022의 영업일·공휴일 규칙을 별도로 확인하며 문서의 예시 날짜를 사용하지 마세요. 봇이 이 대화 밖에서 자동으로 결과를 확인해 다시 연락하겠다고 약속하지 마세요."}
+        source = (sources or {}).get("D001", {})
+        lines = source.get("text", "").splitlines()
+        start = next((i for i, line in enumerate(lines) if line == "## 접수·회신·승인"), None)
+        if start is not None:
+            end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+            result["followup_policy"] = {"source_id": "D001", "title": source.get("title", ""),
+                "status": source.get("status", "문서확인"), "scope": source.get("scope", ""),
+                "start_line": start + 1, "end_line": end, "text": "\n".join(lines[start:end])}
+            result["evidence"] = [*result.get("evidence", [])]
+            if not any(item.get("source_id") == "D001" for item in result["evidence"]):
+                result["evidence"].append({"source_id": "D001", "start_line": start + 1, "end_line": end})
+        return result
     if api_id != "API-29" or result.get("status") != "submitted":
         return result
     lots = {item.get("lot_id") for row in _objects(state.get("action_observations", {}))
@@ -70,8 +82,8 @@ def _receipt_guidance(api_id, body, result, state):
     reports = [row.get("data", {}) for row in state.get("action_observations", {}).values()
                if row.get("api_id") == "API-06" and row.get("parameters", {}).get("lot_id") in lots
                and row.get("status") == "ok"]
-    if any(isinstance(row, dict) and row.get("other_customer_ticket_count", 0) > 0
-           and row.get("reported_symptom_counts", {}).get("MOLD", 0) > 0 for row in reports):
+    if any(isinstance(row, dict)
+           and row.get("other_customer_reported_symptom_counts", {}).get("MOLD", 0) > 0 for row in reports):
         return {**result, "next_step": "환불 접수와 별개로 같은 배송 로트의 타 고객 곰팡이 신고가 확인돼 있습니다. D001 안전 이관 규정을 읽고 조사 확인 상태와 함께 API-35 LANE2_HANDOFF로 안전·판매자/공급 확인을 접수하세요. 이미 같은 사안을 접수했다면 그 번호를 재사용하고, 환불 번호와 안전 이관 번호·회신 기한을 함께 안내하세요. 신고는 하자·원인 확정이 아닙니다."}
     return result
 
@@ -317,12 +329,12 @@ def build_tools(data):
             return _message(runtime, _failure("같은 대상의 접수 본문이 달라졌습니다. 기존 본문을 그대로 재시도하거나 고객의 명시적 변경을 확인하세요."))
         if previous and previous["canonical"] == canonical and previous["result"]["status"] == "submitted":
             return _message(runtime, _receipt_guidance(api_id, body,
-                {**previous["result"], "reused_receipt": True}, runtime.state))
+                {**previous["result"], "reused_receipt": True}, runtime.state, sources))
         result = await api.request(api_id, tc_id=runtime.state["tc_id"], parameters=parameters, body=body, method="POST")
         journal = submission_record({"api_id": api_id, "issue_key": issue_key,
             "policy_source_ids": policy_source_ids, "policy_reason": policy_reason,
             "customer_confirmation": customer_confirmation}, canonical, result)
-        return _message(runtime, _receipt_guidance(api_id, body, result, runtime.state),
+        return _message(runtime, _receipt_guidance(api_id, body, result, runtime.state, sources),
                         action_requests={key: journal}, action_observations=observations)
 
     media_path = ROOT / "media.py"

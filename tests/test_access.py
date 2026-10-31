@@ -168,7 +168,16 @@ def test_ticket_aggregation_never_returns_private_text_ids_or_arbitrary_categori
     serialized=json.dumps(result,ensure_ascii=False)
     assert all(value not in serialized for value in private+['SECOND-ID','THIRD-ID','PRIVATE-CATEGORY'])
     assert set(result)=={'lot_id','ticket_count','other_customer_ticket_count','duplicate_ticket_count',
-                         'reported_symptom_counts','symptom_basis','interpretation','privacy'}
+                         'reported_symptom_counts','other_customer_reported_symptom_counts','symptom_basis','interpretation','privacy'}
+
+
+def test_other_customer_symptoms_cannot_be_inferred_from_separate_counts():
+    rows = [{'ticket_id': 'own', 'member_id': 'MB-SELF', 'category': 'MOLD'},
+            {'ticket_id': 'other', 'member_id': 'MB-OTHER', 'category': 'UNKNOWN'}]
+    result = access.aggregate_lot_tickets(rows, 'LOT-OWN', 'MB-SELF')
+    assert result['reported_symptom_counts']['MOLD'] == 1
+    assert result['other_customer_ticket_count'] == 1
+    assert result['other_customer_reported_symptom_counts'] == {'MOLD': 0, 'DAMAGE': 0, 'UNKNOWN': 1}
 
 
 def test_empty_ticket_aggregation_does_not_assert_no_defect():
@@ -349,7 +358,8 @@ def test_refund_safety_reminder_uses_only_same_order_report(tool_pack, refund_or
         'shipping': {'api_id': 'API-11', 'status': 'ok', 'data': [
             {'order_no': SELF, 'shipment_id': 'SHP-OWN', 'items': [{'lot_id': 'LOT-OWN'}]}]},
         'reports': {'api_id': 'API-06', 'status': 'ok', 'parameters': {'lot_id': report_lot},
-                    'data': {'other_customer_ticket_count': others, 'reported_symptom_counts': {'MOLD': mold}}},
+                    'data': {'other_customer_ticket_count': others, 'reported_symptom_counts': {'MOLD': mold},
+                             'other_customer_reported_symptom_counts': {'MOLD': min(mold, others)}}},
     }}
     receipt = {'status': status, 'data': {'request_id': 'RFD-test'}}
     result = tool_pack._module()._receipt_guidance('API-29', {'order_no': refund_order}, receipt, current)
@@ -359,11 +369,75 @@ def test_refund_safety_reminder_uses_only_same_order_report(tool_pack, refund_or
 
 
 def test_handoff_receipt_reminds_policy_window_without_claiming_completion(tool_pack):
-    receipt = {'status': 'submitted', 'data': {'escalation_id': 'ESC-test'}}
-    result = tool_pack._module()._receipt_guidance('API-35', {}, receipt, {})
+    sources = {row['id']: row for row in json.loads((tool_pack.root/'data/policies.json').read_text())['sources']}
+    receipt = {'status': 'submitted', 'data': {'escalation_id': 'ESC-test'}, 'evidence': [{'source_id': 'API-35'}]}
+    result = tool_pack._module()._receipt_guidance('API-35', {}, receipt, {}, sources)
     assert result['data'] == receipt['data']
     assert 'D001' in result['next_step'] and '회신 기한' in result['next_step']
+    assert 'D022' in result['next_step']
+    excerpt = result['followup_policy']
+    lines = sources['D001']['text'].splitlines()
+    assert excerpt['text'] == '\n'.join(lines[excerpt['start_line']-1:excerpt['end_line']])
+    assert excerpt['text'].startswith('## 접수·회신·승인\n')
+    assert lines[excerpt['end_line']].startswith('## ')
+    assert '3영업일' in excerpt['text'] and '안내 예시' in excerpt['text']
+    assert {row['source_id'] for row in result['evidence']} == {'API-35', 'D001'}
     assert 'next_step' not in receipt
+    assert receipt['evidence'] == [{'source_id': 'API-35'}]
+
+
+@pytest.mark.parametrize('source', [None, {}, {'text': '## 다른 절\n회신 조건 없음'}])
+def test_handoff_without_registered_section_does_not_invent_policy(tool_pack, source):
+    sources = {'D001': source} if source is not None else {}
+    receipt = {'status': 'submitted', 'data': {'escalation_id': 'ESC-test'}}
+    result = tool_pack._module()._receipt_guidance('API-35', {}, receipt, {}, sources)
+    assert 'followup_policy' not in result and not result.get('evidence')
+    assert '3영업일' not in json.dumps(result, ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_handoff_policy_excerpt_preserves_guard_journal_and_receipt_reuse(tool_pack, monkeypatch):
+    current, posts = state(), []
+    receipt = {'status': 'submitted', 'data': {'escalation_id': 'ESC-test'}, 'evidence': [{'source_id': 'API-35'}]}
+    async def fake(self, operation, **kwargs):
+        posts.append((operation, kwargs))
+        return receipt
+    monkeypatch.setattr(ActionAPI, 'request', fake)
+    submit = next(tool for tool in tool_pack.python_tools() if tool.name == 'action_submit')
+    args = dict(api_id='API-35', parameters={}, body={'lane': 'LANE2_HANDOFF', 'reason': '잔여 배송 일정 확인'},
+        policy_source_ids=['D015'], policy_reason='부분 배송의 잔여 물량 일정을 확인하도록 담당자에게 이관합니다.',
+        runtime=SimpleNamespace(state=current, tool_call_id='handoff'), issue_key=SELF+':배송')
+    current['policy_reads'] = {}
+    blocked = await submit.coroutine(**args)
+    assert json.loads(blocked.update['messages'][0].content)['status'] == 'needs_input'
+    assert not posts
+    current['policy_reads'] = {'D015': True}
+    command = await submit.coroutine(**args)
+    result = json.loads(command.update['messages'][0].content)
+    journal = next(iter(command.update['action_requests'].values()))
+    assert result['followup_policy']['source_id'] == 'D001'
+    assert journal['result'] == receipt and 'policy_reads' not in command.update
+    current['action_requests'].update(command.update['action_requests'])
+    reused = json.loads((await submit.coroutine(**args)).update['messages'][0].content)
+    assert reused['reused_receipt'] and reused['followup_policy'] == result['followup_policy']
+    assert len(posts) == 1 and current['policy_reads'] == {'D015': True}
+
+
+@pytest.mark.parametrize('other_symptom,expected', [('MOLD', True), ('DAMAGE', False), ('UNKNOWN', False)])
+def test_refund_reminder_uses_other_customer_symptom_intersection(tool_pack, other_symptom, expected):
+    reports = access.aggregate_lot_tickets([
+        {'ticket_id': 'own', 'member_id': 'MB-SELF', 'category': 'MOLD'},
+        {'ticket_id': 'other', 'member_id': 'MB-OTHER', 'category': other_symptom},
+    ], 'LOT-OWN', 'MB-SELF')
+    current = {'action_observations': {
+        'shipping': {'api_id': 'API-11', 'status': 'ok', 'data': [
+            {'order_no': SELF, 'shipment_id': 'SHP-OWN', 'items': [{'lot_id': 'LOT-OWN'}]}]},
+        'reports': {'api_id': 'API-06', 'status': 'ok', 'parameters': {'lot_id': 'LOT-OWN'},
+                    'data': reports},
+    }}
+    receipt = {'status': 'submitted', 'data': {'request_id': 'RFD-test'}}
+    result = tool_pack._module()._receipt_guidance('API-29', {'order_no': SELF}, receipt, current)
+    assert ('next_step' in result) is expected
 
 
 @pytest.mark.asyncio
