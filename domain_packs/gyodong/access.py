@@ -22,8 +22,10 @@ def initial_account(state: dict) -> dict | None:
     fields = {}
     for line in lines:
         if not line.strip():
+            if not fields:
+                continue
             break
-        match = re.fullmatch(r"\s*-\s*([^:]+):\s*(.*?)\s*", line)
+        match = re.fullmatch(r"\s*[-•]\s*([^:]+):\s*(.*?)\s*", line)
         if not match or match[1].strip() in fields:
             return None
         fields[match[1].strip()] = match[2]
