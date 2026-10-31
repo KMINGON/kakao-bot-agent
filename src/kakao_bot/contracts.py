@@ -10,6 +10,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_validator
 
+MAX_RESPONSE_CHARS = 500
+RESPONSE_DEADLINE_SECONDS = 55
+
 
 class Message(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -82,7 +85,8 @@ def normalize_message(payload: Any, *, channel_only: bool = True, now: datetime 
         callback_token=message.callbackToken,
         received_at=received_at,
         source_timestamp=source,
-        deadline=min(source, received_at) + timedelta(seconds=295),
+        deadline=min(received_at + timedelta(seconds=RESPONSE_DEADLINE_SECONDS),
+                     source + timedelta(seconds=295)),
     )
 
 
@@ -90,7 +94,6 @@ def render_callback(text: str) -> dict[str, Any]:
     clean = text.strip()
     if not clean:
         raise ValueError("empty response")
-    if len(clean) > 1000:
-        clean = clean[:960].rstrip() + "\n\n답변이 길어 일부만 표시했습니다. 필요한 항목을 이어서 물어보세요."
-        clean = clean[:1000]
+    if len(clean) > MAX_RESPONSE_CHARS:
+        clean = clean[:MAX_RESPONSE_CHARS - 1].rstrip() + "…"
     return {"skillResponse": {"version": "2.0", "template": {"outputs": [{"simpleText": {"text": clean}}]}}}

@@ -1,0 +1,8 @@
+id: gyodong
+version: '1.0.0'
+dataset_version: 'contest-20261031'
+description: 교동마을 산지직송 고객 상담과 정책 근거 기반 액션 접수
+tools_module: tools.py
+adapters_module: adapters.py
+allowed_tools: [case_context, search_policy, read_policy, action_get, action_submit, calculate, read_customer_media, inspect_order]
+mcp: []

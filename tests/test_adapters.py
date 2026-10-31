@@ -185,4 +185,4 @@ def build_middleware(pack):
         assert any(e["kind"] == "tool_error" and e["error_type"] == "TimeoutError" for e in result.trace)
         observed = [m for m in model.requests[-1] if isinstance(m, ToolMessage)]
         assert observed[0].status == "error"
-        assert json.loads(observed[0].content)["status"] == "failed"
+        assert json.loads(observed[0].content)["status"] == "unknown"

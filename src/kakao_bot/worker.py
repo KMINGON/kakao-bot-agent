@@ -7,7 +7,7 @@ import contextlib
 import hashlib
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import procrastinate
@@ -24,6 +24,8 @@ _storage: Storage | None = None
 _runtime: Any = None
 _kakao: KakaoClient | None = None
 logger = logging.getLogger(__name__)
+CALLBACK_RESERVE_SECONDS = 12
+CALLBACK_TIMEOUT_SECONDS = 10
 
 
 @queue_app.task(name="kakao.process_event", queue="kakao", retry=procrastinate.RetryStrategy(max_attempts=3, wait=1))
@@ -36,7 +38,7 @@ async def process_event(event_id: str) -> None:
         await _storage.finish_send(event_id, "unknown", "previous_attempt_interrupted")
         return
     remaining = (event["callback_deadline_at"] - datetime.now(UTC)).total_seconds()
-    if remaining <= 15:
+    if remaining <= CALLBACK_TIMEOUT_SECONDS:
         await _storage.expire(event_id)
         return
     event = await _storage.start_run(event_id)
@@ -53,10 +55,14 @@ async def process_event(event_id: str) -> None:
             else:
                 if _runtime is None:
                     raise RuntimeError("agent_runtime_not_available")
-                async with asyncio.timeout(min(settings.run_timeout_seconds, remaining - 15)):
+                run_deadline = event["callback_deadline_at"] - timedelta(seconds=CALLBACK_RESERVE_SECONDS)
+                run_remaining = min(settings.run_timeout_seconds, (run_deadline - datetime.now(UTC)).total_seconds())
+                if run_remaining <= 0:
+                    raise TimeoutError("Queue exhausted response budget")
+                async with asyncio.timeout(run_remaining):
                     result = await _runtime.run(
                         text=event["input_envelope"]["content"], thread_id=event["graph_thread_id"],
-                        event_id=event_id, pack_ref=spec, deadline=event["callback_deadline_at"],
+                        event_id=event_id, pack_ref=spec, deadline=run_deadline,
                     )
                 text, usage, trace = result.text, result.usage, result.trace
             await _storage.save_response(event_id, render_callback(text), usage=usage, trace=trace)
@@ -66,15 +72,13 @@ async def process_event(event_id: str) -> None:
         except Exception as error:
             code = type(error).__name__
             logger.error("event_run_failed event_id=%s code=%s", event_id, code)
-            reset = False
             if _runtime is not None:
                 try:
-                    reset = await _runtime.abandon(thread_id=event["graph_thread_id"], event_id=event_id)
+                    async with asyncio.timeout(1):
+                        await _runtime.abandon(thread_id=event["graph_thread_id"], event_id=event_id)
                 except Exception:
                     logger.error("event_abandon_failed event_id=%s", event_id)
-            failure_text = "처리 중 오류가 발생해 이번 요청을 마치지 못했습니다. 필요한 조건을 포함해 다시 질문해 주세요."
-            if reset:
-                failure_text += " 이번 오류로 대화 문맥을 초기화했으며 업무 자료는 유지됩니다."
+            failure_text = "이번 요청의 결과를 끝까지 확인하지 못했습니다. 대화와 확인된 기록은 유지됩니다. 접수를 시도한 경우 결과 미확인이며, 이미 처리됐을 수 있어 완료·실패를 단정할 수 없습니다."
             await _storage.save_response(
                 event_id,
                 render_callback(failure_text),
@@ -85,9 +89,16 @@ async def process_event(event_id: str) -> None:
         await _storage.expire(event_id)
         return
     try:
-        result = await _kakao.send(attempt["callback_token"], attempt["response_payload"])
+        remaining = (event["callback_deadline_at"] - datetime.now(UTC)).total_seconds()
+        if remaining <= 0:
+            await _storage.finish_send(event_id, "unknown", "deadline_before_send")
+            return
+        async with asyncio.timeout(min(CALLBACK_TIMEOUT_SECONDS, remaining)):
+            result = await _kakao.send(attempt["callback_token"], attempt["response_payload"])
         await _storage.finish_send(event_id, result.status, result.code, result.counts)
         logger.info("event_delivery event_id=%s status=%s", event_id, result.status)
+    except TimeoutError:
+        await _storage.finish_send(event_id, "unknown", "callback_timeout")
     except asyncio.CancelledError:
         with contextlib.suppress(Exception):
             await asyncio.shield(_storage.finish_send(event_id, "unknown", "cancelled_during_send"))

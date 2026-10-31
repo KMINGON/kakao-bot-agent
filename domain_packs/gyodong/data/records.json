@@ -1,0 +1,402 @@
+{
+  "dataset_version": "contest-20261031",
+  "demo": false,
+  "sources": [
+    {
+      "id": "D001",
+      "kind": "policy",
+      "title": "에스컬레이션 절차서"
+    },
+    {
+      "id": "D002",
+      "kind": "policy",
+      "title": "권한 위임표"
+    },
+    {
+      "id": "D003",
+      "kind": "policy",
+      "title": "규정·대응방안 개정 이력"
+    },
+    {
+      "id": "D004",
+      "kind": "policy",
+      "title": "교동마을 체험 운영 기준"
+    },
+    {
+      "id": "D005",
+      "kind": "policy",
+      "title": "체험 프로그램 안내 팜플렛"
+    },
+    {
+      "id": "D006",
+      "kind": "policy",
+      "title": "조합몰 광고 배너"
+    },
+    {
+      "id": "D007",
+      "kind": "policy",
+      "title": "조합몰 상품 상세페이지"
+    },
+    {
+      "id": "D008",
+      "kind": "policy",
+      "title": "판매·환불 규정집"
+    },
+    {
+      "id": "D009",
+      "kind": "policy",
+      "title": "농가 스토리"
+    },
+    {
+      "id": "D010",
+      "kind": "policy",
+      "title": "업무 인계·부재 기록"
+    },
+    {
+      "id": "D011",
+      "kind": "policy",
+      "title": "조합원 리플렛"
+    },
+    {
+      "id": "D012",
+      "kind": "policy",
+      "title": "박스 동봉 안내문과 포장 기준"
+    },
+    {
+      "id": "D013",
+      "kind": "policy",
+      "title": "선물세트 카탈로그"
+    },
+    {
+      "id": "D014",
+      "kind": "policy",
+      "title": "사업자 도매 거래 안내"
+    },
+    {
+      "id": "D015",
+      "kind": "policy",
+      "title": "택배사 계약서"
+    },
+    {
+      "id": "D016",
+      "kind": "policy",
+      "title": "품목별 SKU 카탈로그"
+    },
+    {
+      "id": "D017",
+      "kind": "policy",
+      "title": "로트·출고검사"
+    },
+    {
+      "id": "D018",
+      "kind": "policy",
+      "title": "작황·재해 기록"
+    },
+    {
+      "id": "D019",
+      "kind": "policy",
+      "title": "인플루언서 홍보 협약"
+    },
+    {
+      "id": "D020",
+      "kind": "policy",
+      "title": "방제일지·PHI 안전수확"
+    },
+    {
+      "id": "D021",
+      "kind": "policy",
+      "title": "결항·집하 운송 기록"
+    },
+    {
+      "id": "D022",
+      "kind": "policy",
+      "title": "영업일·공휴일 달력"
+    },
+    {
+      "id": "D023",
+      "kind": "policy",
+      "title": "갯마을 조업·입고 기록"
+    },
+    {
+      "id": "D024",
+      "kind": "policy",
+      "title": "부분환불 산식과 박스 비율 임계표"
+    },
+    {
+      "id": "D025",
+      "kind": "policy",
+      "title": "프로모션 마스터"
+    },
+    {
+      "id": "D026",
+      "kind": "policy",
+      "title": "세금계산서·현금영수증 발행 기준"
+    },
+    {
+      "id": "D027",
+      "kind": "policy",
+      "title": "냉동 수산물 중량·자연감량 허용치"
+    },
+    {
+      "id": "D028",
+      "kind": "policy",
+      "title": "온도기록계 관측 기록"
+    },
+    {
+      "id": "D029",
+      "kind": "policy",
+      "title": "정기배송·구독 약관"
+    },
+    {
+      "id": "D030",
+      "kind": "policy",
+      "title": "갯마을·교동 위탁 공급 계약"
+    },
+    {
+      "id": "D031",
+      "kind": "policy",
+      "title": "개인정보 처리방침"
+    },
+    {
+      "id": "D032",
+      "kind": "policy",
+      "title": "제3자 정보 보호"
+    },
+    {
+      "id": "D033",
+      "kind": "policy",
+      "title": "홍보 게시물 대조 기준"
+    },
+    {
+      "id": "D034",
+      "kind": "policy",
+      "title": "조합몰 운영규정집"
+    },
+    {
+      "id": "D035",
+      "kind": "policy",
+      "title": "상품 라벨·표시사항"
+    },
+    {
+      "id": "D036",
+      "kind": "policy",
+      "title": "증빙 취급 및 권위 서열 규정"
+    },
+    {
+      "id": "D037",
+      "kind": "policy",
+      "title": "결제·주문 대사 절차"
+    },
+    {
+      "id": "API-01",
+      "kind": "live_api",
+      "title": "액션 API-01 실제 응답"
+    },
+    {
+      "id": "API-02",
+      "kind": "live_api",
+      "title": "액션 API-02 실제 응답"
+    },
+    {
+      "id": "API-03",
+      "kind": "live_api",
+      "title": "액션 API-03 실제 응답"
+    },
+    {
+      "id": "API-04",
+      "kind": "live_api",
+      "title": "액션 API-04 실제 응답"
+    },
+    {
+      "id": "API-05",
+      "kind": "live_api",
+      "title": "액션 API-05 실제 응답"
+    },
+    {
+      "id": "API-06",
+      "kind": "live_api",
+      "title": "액션 API-06 실제 응답"
+    },
+    {
+      "id": "API-07",
+      "kind": "live_api",
+      "title": "액션 API-07 실제 응답"
+    },
+    {
+      "id": "API-08",
+      "kind": "live_api",
+      "title": "액션 API-08 실제 응답"
+    },
+    {
+      "id": "API-09",
+      "kind": "live_api",
+      "title": "액션 API-09 실제 응답"
+    },
+    {
+      "id": "API-10",
+      "kind": "live_api",
+      "title": "액션 API-10 실제 응답"
+    },
+    {
+      "id": "API-11",
+      "kind": "live_api",
+      "title": "액션 API-11 실제 응답"
+    },
+    {
+      "id": "API-12",
+      "kind": "live_api",
+      "title": "액션 API-12 실제 응답"
+    },
+    {
+      "id": "API-13",
+      "kind": "live_api",
+      "title": "액션 API-13 실제 응답"
+    },
+    {
+      "id": "API-14",
+      "kind": "live_api",
+      "title": "액션 API-14 실제 응답"
+    },
+    {
+      "id": "API-15",
+      "kind": "live_api",
+      "title": "액션 API-15 실제 응답"
+    },
+    {
+      "id": "API-16",
+      "kind": "live_api",
+      "title": "액션 API-16 실제 응답"
+    },
+    {
+      "id": "API-17",
+      "kind": "live_api",
+      "title": "액션 API-17 실제 응답"
+    },
+    {
+      "id": "API-18",
+      "kind": "live_api",
+      "title": "액션 API-18 실제 응답"
+    },
+    {
+      "id": "API-19",
+      "kind": "live_api",
+      "title": "액션 API-19 실제 응답"
+    },
+    {
+      "id": "API-20",
+      "kind": "live_api",
+      "title": "액션 API-20 실제 응답"
+    },
+    {
+      "id": "API-21",
+      "kind": "live_api",
+      "title": "액션 API-21 실제 응답"
+    },
+    {
+      "id": "API-22",
+      "kind": "live_api",
+      "title": "액션 API-22 실제 응답"
+    },
+    {
+      "id": "API-23",
+      "kind": "live_api",
+      "title": "액션 API-23 실제 응답"
+    },
+    {
+      "id": "API-24",
+      "kind": "live_api",
+      "title": "액션 API-24 실제 응답"
+    },
+    {
+      "id": "API-25",
+      "kind": "live_api",
+      "title": "액션 API-25 실제 응답"
+    },
+    {
+      "id": "API-26",
+      "kind": "live_api",
+      "title": "액션 API-26 실제 응답"
+    },
+    {
+      "id": "API-27",
+      "kind": "live_api",
+      "title": "액션 API-27 실제 응답"
+    },
+    {
+      "id": "API-28",
+      "kind": "live_api",
+      "title": "액션 API-28 실제 응답"
+    },
+    {
+      "id": "API-29",
+      "kind": "live_api",
+      "title": "액션 API-29 실제 응답"
+    },
+    {
+      "id": "API-30",
+      "kind": "live_api",
+      "title": "액션 API-30 실제 응답"
+    },
+    {
+      "id": "API-31",
+      "kind": "live_api",
+      "title": "액션 API-31 실제 응답"
+    },
+    {
+      "id": "API-32",
+      "kind": "live_api",
+      "title": "액션 API-32 실제 응답"
+    },
+    {
+      "id": "API-33",
+      "kind": "live_api",
+      "title": "액션 API-33 실제 응답"
+    },
+    {
+      "id": "API-34",
+      "kind": "live_api",
+      "title": "액션 API-34 실제 응답"
+    },
+    {
+      "id": "API-35",
+      "kind": "live_api",
+      "title": "액션 API-35 실제 응답"
+    },
+    {
+      "id": "API-36",
+      "kind": "live_api",
+      "title": "액션 API-36 실제 응답"
+    },
+    {
+      "id": "API-37",
+      "kind": "live_api",
+      "title": "액션 API-37 실제 응답"
+    },
+    {
+      "id": "API-38",
+      "kind": "live_api",
+      "title": "액션 API-38 실제 응답"
+    },
+    {
+      "id": "API-39",
+      "kind": "live_api",
+      "title": "액션 API-39 실제 응답"
+    },
+    {
+      "id": "API-40",
+      "kind": "live_api",
+      "title": "액션 API-40 실제 응답"
+    },
+    {
+      "id": "CASE_CONTEXT",
+      "kind": "customer_input",
+      "title": "고객 대화에서 전달된 TC 및 최초 상담 원문"
+    },
+    {
+      "id": "MEDIA_INPUT",
+      "kind": "customer_input",
+      "title": "고객이 제공한 이미지·음성",
+      "scope": "고객 제공 자료의 기계 해석이다. 정책 정본이나 사실 확정이 아니며 원자료·주문·로트 기록과 대조하고 불확실성을 보존한다."
+    }
+  ]
+}

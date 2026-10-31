@@ -14,7 +14,7 @@ x-app: &app
       max-size: "10m"
       max-file: "3"
   volumes:
-    - ./domain_packs:/app/domain_packs:ro
+    - ${PACKS_HOST_PATH:-./domain_packs}:/app/domain_packs:ro
 
 x-env: &env
   DATABASE_HOST: postgres
@@ -32,7 +32,10 @@ x-env: &env
   MODEL_NAME: ${MODEL_NAME:-gpt-5.4-mini-2026-03-17}
   BOT_MODE: ${BOT_MODE:-echo}
   RUNTIME_REVISION: ${RUNTIME_REVISION:-v1}
-  WORKER_CONCURRENCY: "1"
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+  AGENT_RUN_CAP_SECONDS: "40"
+  MAX_MODEL_CALLS: ${MAX_MODEL_CALLS:-12}
+  MAX_TOOL_CALLS: ${MAX_TOOL_CALLS:-24}
   LANGSMITH_TRACING: "false"
   LANGCHAIN_TRACING_V2: "false"
 
@@ -86,12 +89,15 @@ services:
       <<: *env
       KAKAO_BOT_TOKEN_FILE: /run/secrets/kakao_bot_token
       OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      ACTION_API_TOKEN_FILE: /run/secrets/action_api_token
+      ACTION_API_WRITES_ENABLED: ${ACTION_API_WRITES_ENABLED:-false}
     secrets:
       - postgres_password
       - webhook_secret
       - ops_token
       - kakao_bot_token
       - openai_api_key
+      - action_api_token
     depends_on:
       api:
         condition: service_healthy
@@ -144,6 +150,8 @@ secrets:
     file: .local/secret/ai-top-100-kakao-admin-key.txt
   openai_api_key:
     file: .local/secret/OpenAI_API_KEY
+  action_api_token:
+    file: .local/secret/ai-top-100-action-api-token
   cloudflare_tunnel_token:
     file: .local/secret/cloudflare_tunnel_token
 

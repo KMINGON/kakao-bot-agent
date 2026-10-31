@@ -37,7 +37,7 @@ class Settings:
     model_name: str = "gpt-5.4-mini-2026-03-17"
     runtime_revision: str = "v1"
     worker_concurrency: int = 1
-    run_timeout_seconds: int = 180
+    run_timeout_seconds: int = 40
     max_model_calls: int = 8
     max_tool_calls: int = 12
     max_input_tokens: int = 24000
@@ -73,7 +73,7 @@ class Settings:
             model_name=os.getenv("MODEL_NAME", "gpt-5.4-mini-2026-03-17"),
             runtime_revision=os.getenv("RUNTIME_REVISION", "v1"),
             worker_concurrency=integer("WORKER_CONCURRENCY", 1, 1, 8),
-            run_timeout_seconds=integer("AGENT_RUN_CAP_SECONDS", 180, 5, 240),
+            run_timeout_seconds=integer("AGENT_RUN_CAP_SECONDS", 40, 5, 40),
             max_model_calls=integer("MAX_MODEL_CALLS", 8, 1, 32),
             max_tool_calls=integer("MAX_TOOL_CALLS", 12, 1, 64),
             max_input_tokens=integer("MAX_INPUT_TOKENS", 24000, 2000, 100000),

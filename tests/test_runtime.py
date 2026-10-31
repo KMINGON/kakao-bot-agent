@@ -13,7 +13,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import Field
 
 from kakao_bot.runtime import AgentRuntime, RuntimeConfig, load_pack, lock_pack
-from kakao_bot.runtime.agent import validate_answer
+from kakao_bot.runtime.agent import render_answer, validate_answer
+from kakao_bot.runtime.schema import AnswerEnvelope
 from kakao_bot.runtime.policy import BudgetExceeded, RunBudget
 from kakao_bot.runtime.tools import arithmetic
 
@@ -112,6 +113,26 @@ def test_answer_cannot_invent_evidence():
         validate_answer(answer(), pack, set())
 
 
+@pytest.mark.parametrize("length", [499, 500, 501])
+def test_answer_render_500_character_boundary(length):
+    text = "가" * length
+    rendered = render_answer(AnswerEnvelope.model_validate(answer(text, [])))
+    assert len(rendered) == min(length, 500)
+    assert rendered == (text if length <= 500 else text[:499] + "…")
+
+
+def test_answer_sources_and_demo_prefix_fit_final_500_characters():
+    envelope = AnswerEnvelope.model_validate(answer("가" * 499 + " D008", ["D008", "API-29"]))
+    rendered = render_answer(envelope, demo=True)
+    assert len(rendered) <= 500
+    assert rendered.startswith("예시 자료 기준입니다.")
+    assert rendered.endswith("근거: API-29, D008")
+    many = AnswerEnvelope.model_validate(answer("답변" * 300, [f"SOURCE-{n:04d}" for n in range(100)]))
+    assert len(render_answer(many)) <= 500
+    huge = AnswerEnvelope.model_validate(answer("답변" * 300, ["X" * 1000]))
+    assert len(render_answer(huge)) <= 500
+
+
 def test_final_request_budget_includes_tools_and_call_count():
     budget = RunBudget(1, 2, 900, time.monotonic() + 10)
     with pytest.raises(BudgetExceeded, match="input budget"):
@@ -195,6 +216,9 @@ async def test_failed_event_can_be_abandoned_then_new_turn_runs():
         with pytest.raises(Exception):
             await runtime.run(text="bad", thread_id="failed", event_id="f1", pack_ref="equipment_demo", deadline=datetime.now(UTC) + timedelta(seconds=30))
         assert await runtime.abandon("failed", "f1")
+        state = await runtime.inspect("failed", "equipment_demo")
+        assert not state.next
+        assert any(m.id == "f1" and m.content == "bad" for m in state.values["messages"])
     good = ScriptedModel(responses=[AIMessage(content=json.dumps(answer("다시 시작", [])))])
     async with AgentRuntime(config(), checkpointer=saver, model=good) as runtime:
         result = await runtime.run(text="new", thread_id="failed", event_id="f2", pack_ref="equipment_demo", deadline=datetime.now(UTC) + timedelta(seconds=30))

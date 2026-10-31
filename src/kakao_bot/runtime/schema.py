@@ -15,7 +15,7 @@ class Claim(BaseModel):
 class AnswerEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["answered", "needs_input", "uncertain"]
-    answer: str = Field(description="사용자에게 보낼 간결한 한국어 답변, 850자 이내")
+    answer: str = Field(description="사용자에게 보낼 간결한 한국어 답변, 430~450자 이내. 출처를 포함한 최종 답변은 500자 이내")
     claims: list[Claim]
     evidence_ids: list[str]
     missing_fields: list[str]
@@ -31,10 +31,10 @@ class RuntimeConfig:
     max_tool_calls: int = 12
     max_input_tokens: int = 24000
     max_output_tokens: int = 2048
-    run_timeout_seconds: float = 180
+    run_timeout_seconds: float = 40
     tool_timeout_seconds: float = 15
-    model_timeout_seconds: float = 60
-    summary_trigger_tokens: int = 12000
+    model_timeout_seconds: float = 40
+    summary_trigger_tokens: int = 18000
     summary_keep_messages: int = 8
 
 

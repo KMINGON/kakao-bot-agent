@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import tiktoken
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_openai import ChatOpenAI
 
 
@@ -37,13 +38,23 @@ class RunBudget:
             raise TimeoutError("Agent deadline expired")
         return left
 
-    def model_start(self, request: dict) -> None:
+    def model_start(self, request: dict, *, reasoning_tokens: dict[str, int] | None = None) -> None:
         self.remaining()
         if self.model_calls >= self.max_model_calls:
             raise BudgetExceeded("Model call limit exceeded")
-        # Count the final request, including system prompt and bound tool schemas.
-        # JSON tokenization is a conservative local estimate, not provider billing.
-        estimated = len(_ENCODER.encode(json.dumps(request, ensure_ascii=False, default=str))) + 512
+        # Responses ciphertext is opaque transport state, not tokenized model text.
+        # Charge its recorded reasoning tokens (or a full output allowance), preserving the wire payload.
+        estimated_request, opaque_tokens = request, 0
+        if isinstance(request.get("input"), list):
+            inputs = []
+            for item in request["input"]:
+                if isinstance(item, dict) and item.get("type") == "reasoning" and item.get("encrypted_content"):
+                    inputs.append({key: value for key, value in item.items() if key != "encrypted_content"})
+                    opaque_tokens += (reasoning_tokens or {}).get(item.get("id"), 2048)
+                else:
+                    inputs.append(item)
+            estimated_request = {**request, "input": inputs}
+        estimated = len(_ENCODER.encode(json.dumps(estimated_request, ensure_ascii=False, default=str))) + opaque_tokens + 512
         if estimated > self.max_input_tokens:
             raise BudgetExceeded(f"Final request exceeds input budget ({estimated})")
         self.model_calls += 1
@@ -64,12 +75,38 @@ _ENCODER = tiktoken.get_encoding("o200k_base")
 active_budget: ContextVar[RunBudget | None] = ContextVar("agent_budget", default=None)
 
 
+def count_context_tokens(messages, *, tools=None) -> int:
+    """Count summary context without tokenizing opaque Responses transport state."""
+    visible, opaque_tokens = [], 0
+    for message in messages:
+        if isinstance(message.content, list):
+            content = []
+            usage = getattr(message, "usage_metadata", None) or {}
+            for block in message.content:
+                if isinstance(block, dict) and block.get("type") == "reasoning" and block.get("encrypted_content"):
+                    content.append({key: value for key, value in block.items() if key != "encrypted_content"})
+                    opaque_tokens += usage.get("output_token_details", {}).get(
+                        "reasoning", usage.get("output_tokens", 2048))
+                else:
+                    content.append(block)
+            message = message.model_copy(update={"content": content})
+        visible.append(message)
+    return count_tokens_approximately(visible, tools=tools, use_usage_metadata_scaling=True) + opaque_tokens
+
+
 class BudgetedChatOpenAI(ChatOpenAI):
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         budget = active_budget.get()
         if budget is None:
             raise RuntimeError("Provider invocation requires an active run budget")
-        budget.model_start(self._get_request_payload(messages, stop=stop, **kwargs))
+        reasoning_tokens = {}
+        for message in messages:
+            usage = getattr(message, "usage_metadata", None) or {}
+            for block in message.content if isinstance(message.content, list) else []:
+                if isinstance(block, dict) and block.get("type") == "reasoning" and block.get("encrypted_content"):
+                    reasoning_tokens[block.get("id")] = usage.get("output_token_details", {}).get(
+                        "reasoning", usage.get("output_tokens", self.max_tokens or 2048))
+        budget.model_start(self._get_request_payload(messages, stop=stop, **kwargs), reasoning_tokens=reasoning_tokens)
         started = time.monotonic()
         try:
             async with asyncio.timeout(budget.remaining()):
@@ -91,6 +128,10 @@ class BudgetedChatOpenAI(ChatOpenAI):
 
 
 class ToolPolicyMiddleware(AgentMiddleware):
+    def before_agent(self, state, runtime):
+        # The graph input schema excludes structured_response, so clear it here.
+        return {"structured_response": None}
+
     async def awrap_tool_call(self, request, handler):
         budget = active_budget.get()
         if budget is None:
@@ -111,8 +152,8 @@ class ToolPolicyMiddleware(AgentMiddleware):
         except Exception as error:
             # Provider/transport exception strings can contain credentials and URLs.
             budget.trace.append({"kind": "tool_error", "tool": name, "error_type": type(error).__name__})
-            return ToolMessage(content=json.dumps({"status": "failed", "error": type(error).__name__,
-                               "message": "도구 조회에 실패했습니다. 결과를 추정하지 마세요."}, ensure_ascii=False),
+            return ToolMessage(content=json.dumps({"status": "unknown", "error": type(error).__name__,
+                               "message": "도구 실행 결과를 확인하지 못했습니다. 접수·변경 요청은 이미 처리됐을 수 있으므로 성공·실패를 단정하거나 본문을 바꿔 재시도하지 마세요."}, ensure_ascii=False),
                                tool_call_id=request.tool_call["id"], name=name, status="error")
         budget.trace.append({"kind": "tool", "tool": name,
                              "elapsed_ms": round((time.monotonic() - started) * 1000)})

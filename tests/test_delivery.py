@@ -48,10 +48,12 @@ def test_strict_wire_fields(field, value):
         normalize_message(wire(**{field: value}))
 
 
-def test_deadline_uses_earlier_timestamp():
+def test_deadline_includes_queue_time_and_respects_callback_token_expiry():
     now = datetime.now(UTC)
     event = normalize_message(wire(timestamp=(now - timedelta(seconds=10)).isoformat()), now=now)
-    assert event.deadline == now + timedelta(seconds=285)
+    assert event.deadline == now + timedelta(seconds=55)
+    old = normalize_message(wire(timestamp=(now - timedelta(seconds=270)).isoformat()), now=now)
+    assert old.deadline == now + timedelta(seconds=25)
     with pytest.raises(ValueError):
         normalize_message(wire(timestamp=(now + timedelta(seconds=60)).isoformat()), now=now)
 
@@ -72,9 +74,17 @@ def test_callback_is_one_short_text_bubble():
     result = render_callback("가" * 1500)
     outputs = result["skillResponse"]["template"]["outputs"]
     assert len(outputs) == 1
-    assert len(outputs[0]["simpleText"]["text"]) <= 1000
+    assert len(outputs[0]["simpleText"]["text"]) <= 500
     with pytest.raises(ValueError):
         render_callback(" \n")
+
+
+@pytest.mark.parametrize("length", [499, 500, 501])
+def test_callback_500_character_boundary(length):
+    text = "가" * length
+    rendered = render_callback(text)["skillResponse"]["template"]["outputs"][0]["simpleText"]["text"]
+    assert len(rendered) == min(length, 500)
+    assert rendered == (text if length <= 500 else text[:499] + "…")
 
 
 @pytest.mark.parametrize("code,body,expected", [
