@@ -2,7 +2,9 @@
 
 교동마을·갯마을 조합몰의 주문, 배송, 환불, 프로모션, 정기배송을 상담하는 AI_TOP_100 대회용 에이전트다. 주민에게 받은 원문과 실제 업무 API를 대조하고, 조건을 확인한 요청을 접수한다.
 
-로컬 Docker에서 실행하며 Cloudflare Tunnel로 `https://kakao.mingon.dev`에 연결한다. 웹훅은 `https://kakao.mingon.dev/webhooks/kakao`다. 공유기 포트 개방이나 고정 IP 없이 공개 HTTPS를 사용한다.
+**운영 종료: 2026-11-01.** 대회용 Docker 컨테이너·프로젝트 이미지·네트워크, Cloudflare 터널·DNS, 카카오 웹훅을 정리했다. 소스와 조사 자료, DB·로그는 보존했다. 재가동하려면 이미지 빌드와 터널·DNS·웹훅 재설정이 필요하다.
+
+대회에서는 로컬 Docker를 Cloudflare Tunnel로 `https://kakao.mingon.dev`에 연결했다. 웹훅 주소는 `https://kakao.mingon.dev/webhooks/kakao`였으며, 공유기 포트 개방이나 고정 IP 없이 공개 HTTPS를 사용했다. 아래 구성과 실행 방법은 재구축을 위한 기록이다.
 
 ## 처리 흐름
 

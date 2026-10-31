@@ -2,6 +2,7 @@
 
 ## 현재 작업 기준
 
+- 2026-11-01에 대회용 Docker 서비스와 Cloudflare 터널·DNS, 카카오 웹훅을 종료했다. 새 운영 요청 전까지 재배포하지 않는다. 백업과 종료 근거는 `.local/cleanup/20261101/`에 있다.
 - 대회 구현은 `master`에 통합했다. 이전 독립 에이전트와 `contest-implementation` 워크트리의 역할 분담은 종료했다. 새 요청 없이 인터뷰·유료 평가·에이전트 세션을 재개하지 않는다.
 - 제품 구성과 실행은 `README.md`, 운영은 `ops/README.md`, 확장은 `docs/ADAPTERS.md`를 따른다.
 - 이전 계획, 조사, 검증 결과, 정리 기록은 `.local/`에 보존한다. `.local/ai_top_100`은 Windows Obsidian 볼트로 연결되어 있으므로 링크 대상까지 삭제하지 않는다.
